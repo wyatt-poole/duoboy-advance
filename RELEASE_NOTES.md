@@ -1,3 +1,7 @@
+# DuoBoy Advance 0.1.3
+
+- New app icon (also used for home-screen shortcuts).
+
 # DuoBoy Advance 0.1.2 — hotfix
 
 - Fixed: the party ball rows in battle were drawn one pixel too low, which made empty slots look broken. They now match the game's own sprites.

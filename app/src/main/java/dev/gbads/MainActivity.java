@@ -100,7 +100,7 @@ public final class MainActivity extends Activity implements Bottom.Host {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         android.content.pm.ShortcutInfo info = new android.content.pm.ShortcutInfo.Builder(this, "rom:" + rom)
                 .setShortLabel(title.replace("Pokémon ", "")).setLongLabel(title)
-                .setIcon(android.graphics.drawable.Icon.createWithResource(this, android.R.drawable.sym_def_app_icon)) // ponytail: real icon with release prep
+                .setIcon(android.graphics.drawable.Icon.createWithResource(this, R.mipmap.ic_launcher))
                 .setIntent(launch).build();
         sm.requestPinShortcut(info, null);
     }
