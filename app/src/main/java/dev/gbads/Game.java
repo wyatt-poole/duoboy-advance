@@ -105,9 +105,10 @@ final class Game {
     Game(Rom rom) { this.rom = rom; safeMode = !rom.testedBuild(); }
     /** An Unbound build we haven't tested, or a hook threw: battles keep the game's own menus, the party can't be edited. */
     volatile boolean safeMode;
-    // Battle types we've played through: double, "is master", trainer, roamer, legendaries, scripted wild. Anything else
-    // (link, multi/partner, Safari, Battle Tower, tutorials, ghost, e-Reader, Unbound's own extras) keeps the game's menus.
-    private static final int SUPPORTED_BATTLES = 0x1 | 0x4 | 0x8 | 0x400 | 0x1000 | 0x2000 | 0x4000 | 0x20000 | 0x40000;
+    // Battle types we've played through: double, "is master", trainer, roamer, legendaries, scripted wild, partner. Anything else
+    // (link, multi, Safari, Battle Tower, tutorials, ghost, e-Reader, Unbound's own extras) keeps the game's menus.
+    // 0x400000: Unbound's in-game partner battles (a double where the partner's Pokémon is AI-controlled)
+    private static final int SUPPORTED_BATTLES = 0x1 | 0x4 | 0x8 | 0x400 | 0x1000 | 0x2000 | 0x4000 | 0x20000 | 0x40000 | 0x400000;
     private boolean battleSupported() { return !safeMode && (Core.read32(0x02022B4C) & ~SUPPORTED_BATTLES) == 0; }
 
     /** Called once per frame on the emu thread. */
@@ -173,6 +174,8 @@ final class Game {
         boolean[] sprBall = new boolean[4];
         /** Trainer battles: the opponent's party for the status balls (null in wild battles). */
         Mon[] foeParty;
+        /** Partner battles: all six player slots (yours 0-2, the partner's 3-5; null = empty), for the ball row. */
+        Mon[] allyParty;
         /** Move info popup (L / Info) is open on the move screen. */
         boolean moveInfo;
         boolean[] partyInBattle = new boolean[6];
@@ -238,6 +241,7 @@ final class Game {
     private void pollBattle() {
         if (!inBattle()) { battle = null; java.util.Arrays.fill(lastTarget, -1); chooseBattler = -1; bagBattler = -1; return; }
         Battle b = new Battle();
+        b.passive = !battleSupported(); // unfamiliar battle type: hands off for the whole battle
         byte[] funcs = new byte[16];
         Core.read(CONTROLLER_FUNCS, funcs);
         interceptChoosePokemon(funcs);
@@ -251,7 +255,7 @@ final class Game {
             for (int a : MOVE_FUNCS) if (f == a) mode = Battle.MOVES;
             for (int a : TARGET_FUNCS) if (f == a) mode = Battle.TARGET;
             if (f == HANDLE_MOVE_SWITCHING) mode = Battle.SWAP;
-            if (mode != Battle.WAIT && !battleSupported()) { b.passive = true; break; } // the game's own menus run this one
+            if (b.passive) break; // the game's own menus run this one
             if (mode != Battle.WAIT) { b.mode = mode; b.battler = pb; break; }
         }
         b.doubles = (Core.read32(0x02022B4C) & 0x01) != 0; // BATTLE_TYPE_DOUBLE
@@ -323,6 +327,11 @@ final class Game {
             byte[] at = new byte[2];
             Core.read(0x02037F1A, at); // gBattleAnimAttacker, gBattleAnimTarget
             b.animAttacker = at[0] & 3; b.animTarget = at[1] & 3;
+        }
+        if ((Core.read32(0x02022B4C) & 0x400000) != 0) { // partner battle: the game reports only your count, the partner's are in slots 3-5
+            Core.read(PLAYER_PARTY, enemyBuf);
+            b.allyParty = new Mon[6];
+            for (int i = 0; i < 6; i++) { Mon m = decodeMon(enemyBuf, i * 100); if (m.maxHp > 0) b.allyParty[i] = m; }
         }
         if (!b.wild) {
             Core.read(0x0202402C, enemyBuf); // gEnemyParty (Unbound leaves gEnemyPartyCount at 0: count real mons instead)

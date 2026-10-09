@@ -1313,7 +1313,7 @@ final class Bottom extends View {
             else { platform(140, 82 - up, 22, 7); platform(108, 140, 22, 7); }
             for (int who = 0; who < 4; who++) drawFieldMon(b, who);
             if (b.foeParty != null) partyBallRow(b.foeParty, 34);
-            partyBallRow(game.state.party, 153);
+            partyBallRow(b.allyParty != null ? b.allyParty : game.state.party, 153);
             actionButton(33, 4, COL_Y, SIDE_W, SIDE_H, ball2x(), "Pokémon", live && b.actionCursor == Game.B_ACTION_POKEMON, skin.partyPal[10][5], skin.partyPal[10][4]);
             actionButton(31, 4, COL_Y + SIDE_H + 4, SIDE_W, SIDE_H, cubeIcon(), "Cube", live && b.actionCursor == Game.B_ACTION_BAG, skin.partyPal[4][10], skin.partyPal[4][9]);
             actionButton(30, FIGHT_X, COL_Y, FIGHT_W, SIDE_Y + FIGHT_H - COL_Y, fightIcon(), "Fight", live && b.actionCursor == Game.B_ACTION_FIGHT, fightRed(), lighten(fightRed()));
@@ -1409,7 +1409,7 @@ final class Bottom extends View {
     private final Canvas topBoxCanvas = new Canvas(topBox);
     Bitmap battleTopOverlay() {
         Game.Battle b = game.battle;
-        if (b == null || !b.topHold && (!b.inBattleScreen || (b.mode == Game.Battle.WAIT && !b.menuOnTop && !b.choosing && !b.bagOpen))) return null;
+        if (b == null || b.passive || !b.topHold && (!b.inBattleScreen || (b.mode == Game.Battle.WAIT && !b.menuOnTop && !b.choosing && !b.bagOpen))) return null;
         topBox.eraseColor(0);
         topBoxCanvas.drawBitmap(skin.battleTextbox, 0, 0, null);
         String prompt = b.choosing ? "Choose a Pokémon." : b.bagOpen ? "Choose an item." : b.mode == Game.Battle.TARGET ? "Choose a target." : "What will " + b.player.nick + " do?";

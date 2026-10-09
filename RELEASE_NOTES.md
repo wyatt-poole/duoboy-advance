@@ -1,3 +1,8 @@
+# DuoBoy Advance 0.1.1 — hotfix
+
+- Partner battles (you and an AI partner against two foes, like the one near the start of a new game) now use the bottom screen like double battles. The ball row shows your Pokémon and your partner's.
+- Fixed: in battle types DuoBoy hands back to the game, the game's own battle menu was hidden on the top screen. It now shows normally.
+
 # DuoBoy Advance 0.1.0 — first public preview
 
 The first public build. Supports **Pokémon Unbound 2.1.1.1** (patched onto Pokémon FireRed (USA) v1.0) on dual-screen Android handhelds, developed on the AYN Thor.
@@ -16,7 +21,7 @@ These should work or fall back safely, but haven't been played through. Reports 
 - Learning a new move in battle ("Delete a move?")
 - Eggs in the party (display and item rules)
 - The patcher and home shortcuts from start to finish on a device
-- Battle types other than normal wild and trainer singles / doubles: partner and multi battles, Battle Frontier facilities, Safari-style battles, special scripted battles (these use the game's own menus)
+- Battle types other than normal wild and trainer singles / doubles and in-game partner battles: link multi battles, Battle Frontier facilities, Safari-style battles, special scripted battles (these use the game's own menus)
 - Unbound versions other than 2.1.1.1 (they run in safe mode)
 - Dual-screen devices other than the AYN Thor
 - Starting a brand-new game all the way to the first Pokémon (the intro and naming were checked)
