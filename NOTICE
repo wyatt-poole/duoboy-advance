@@ -1,0 +1,18 @@
+DuoBoy Advance
+Copyright (C) 2026 Wyatt Poole
+
+This program is free software: you can redistribute it and/or modify it under the terms of the
+GNU General Public License as published by the Free Software Foundation, version 3 of the License
+or (at your option) any later version. See LICENSE.
+
+Additional term under section 7(b) of the GPL:
+Any distributed copy or modified version of this program, in source or binary form, must keep a
+reasonable attribution to the original author in its user-facing credits or about screen and in its
+documentation, for example: "Based on DuoBoy Advance by Wyatt Poole".
+
+Third-party components (each under its own license, see third_party/):
+- mGBA, Copyright (C) endrift and contributors, Mozilla Public License 2.0
+- rcheevos, Copyright (C) RetroAchievements, MIT License
+
+No game ROMs, patches or game assets are included. Pokémon and related names are trademarks of their
+respective owners; this project is not affiliated with or endorsed by them.

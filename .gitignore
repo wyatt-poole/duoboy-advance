@@ -1,0 +1,18 @@
+# build outputs
+build/
+app/build/
+app/.cxx/
+.gradle/
+*.apk
+*.aab
+# machine-local
+local.properties
+.idea/
+*.iml
+# never commit saves or ROMs
+save-backups/
+*.sav
+*.srm
+*.gba
+keystore.properties
+*.jks
