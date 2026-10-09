@@ -204,7 +204,8 @@ final class Skin {
         hp = r.palette(0x08D11BA4);
         for (int i = 0; i < 4; i++) { // ponytail: sheet found via its SpriteSheet record (tag 0xD714) at 0x08260498
             int[] px = new int[64];
-            Rom.tile(r.d, (0x08D12404 & 0x1FFFFFF) / 32 + i, hp, px, 8, 0, 0, false, false);
+            byte[] t = java.util.Arrays.copyOfRange(r.d, (0x08D12404 & 0x1FFFFFF) + i * 32, (0x08D12404 & 0x1FFFFFF) + i * 32 + 32); // not 32-aligned
+            Rom.tile(t, 0, hp, px, 8, 0, 0, false, false);
             partyBalls[i] = Bitmap.createBitmap(px, 8, 8, Bitmap.Config.ARGB_8888);
         } // ponytail: Unbound's healthbox palette found by content (battle OBJ palette); other hacks need theirs
         int[][] tbPals = new int[16][];
