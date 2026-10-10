@@ -23,10 +23,11 @@ final class Bottom extends View {
 
     /** App-level settings the bottom screen exposes (implemented by MainActivity). */
     interface Host {
-        String raUser(); boolean hardcore(); String romName(); String saveDir();
+        String raUser(); boolean hardcore(); boolean pixelPerfect(); void togglePixelPerfect(); String romName(); String saveDir();
         void raLogin(); void raLogout(); void toggleHardcore(); void pickRom(); void pickSaveDir(); void importSave(); void exportSave(); String saveType(); void toggleSaveType();
         java.util.List<String[]> roms(); String romDir(); void pickRomDir(); void clearRomDir(); void addRom(); void removeRom(String path);
         String currentRom(); void playRom(String path); void addShortcut(); void patchRom();
+        java.util.List<String[]> stateSlots(); // {slot, "MM/dd HH:mm"} for each save state file
     }
 
     private final Host host;
@@ -210,9 +211,9 @@ final class Bottom extends View {
             int black = Math.max(0, Math.min(16, 16 - game.topLuma * 16 / 48));
             if (black > 0) { fill.setColor((black * 255 / 16) << 24); c.drawRect(0, 0, W, H, fill); }
         }
-        if (game.awaitingA && !game.resetPrompt && battle == null && game.inGame) { fill.setColor(0x40000000); c.drawRect(0, 0, W, H, fill); } // tap = A (battles are already dimmed while text plays)
+        if (game.awaitingA && !game.resetPrompt && battle == null && game.inGame) { fill.setColor(0x68000000); c.drawRect(0, 0, W, H, fill); } // tap = A (battles are already dimmed while text plays)
         else if (battle == null && game.inGame && game.state.fieldBusy) { // start menu: party greyed; cutscene / script: everything
-            fill.setColor(0x60000000); c.drawRect(0, game.state.startMenuOpen ? TOP_H : 0, W, game.state.startMenuOpen ? BAR_Y : H, fill);
+            fill.setColor(0x78000000); c.drawRect(0, game.state.startMenuOpen ? TOP_H : 0, W, game.state.startMenuOpen ? BAR_Y : H, fill);
         }
         if (game.resetPrompt) drawResetPrompt();
         drawToast();
@@ -240,11 +241,11 @@ final class Bottom extends View {
         // top bar: Unbound's purple strip, trainer card (left), clock box, options (right)
         strip(0, TOP_H - 4, 0);
         strip(40, 4, TOP_H - 4); // separator line
-        c.drawBitmap(entryIcon(Game.TRAINER_CARD, pressed != 10), 4, pressed == 10 ? 1 : 0, null);
+        c.drawBitmap(entryIcon(Game.TRAINER_CARD, pressed != 10 && s.menuOn[Game.TRAINER_CARD]), 4, pressed == 10 ? 1 : 0, null);
         c.drawBitmap(entryIcon(Game.SETTINGS, pressed != 11), W - 36, pressed == 11 ? 1 : 0, null);
         // time + map/party toggle, centred together as one group
         String time = clock.format(new Date());
-        boolean canToggle = s.hasMap && s.mapX >= 0;
+        boolean canToggle = s.hasMap && s.mapX >= 0 || s.dexNav;
         int tw = textW(time) + 16, groupW = tw + (canToggle ? 4 + TOGGLE_W : 0), gx = (W - groupW) / 2;
         window(gx, 4, tw, 24);
         text(time, gx + 8, 9);
@@ -259,7 +260,7 @@ final class Bottom extends View {
         // bottom bar: Unbound's purple strip with the menu icons (colour; grey while touched — the reverse of the game's cursor)
         strip(120, 40, BAR_Y + 2);
         for (int i = 0; i < BUTTON_ENTRY.length; i++)
-            c.drawBitmap(entryIcon(BUTTON_ENTRY[i], pressed != i), buttonX(i), ICON_Y + (pressed == i ? 1 : 0), null);
+            c.drawBitmap(entryIcon(BUTTON_ENTRY[i], pressed != i && s.menuOn[BUTTON_ENTRY[i]]), buttonX(i), ICON_Y + (pressed == i ? 1 : 0), null); // grey = not unlocked yet
     }
     private static int buttonX(int i) { return 12 + i * 48; }
 
@@ -268,8 +269,8 @@ final class Bottom extends View {
     private static int owView; // 0 party, 1 map (needs the Town Map), 2 area (wild Pokémon here)
     private boolean mapShown() { return owView == 1 && game.state.hasMap && game.state.mapX >= 0; }
     private boolean partyShown() { return !mapShown() && owView != 2; }
-    private int nextView() { // party -> map -> area (the DexNav-style Area view is experimental: debug / dev builds only)
-        boolean map = game.state.hasMap && game.state.mapX >= 0, area = BuildConfig.EXPERIMENTAL;
+    private int nextView() { // party -> map -> area (the Area view needs the game's DexNav; dev builds always have it)
+        boolean map = game.state.hasMap && game.state.mapX >= 0, area = game.state.dexNav;
         return owView == 0 ? (map ? 1 : area ? 2 : 0) : owView == 1 && area ? 2 : 0;
     }
 
@@ -334,45 +335,46 @@ final class Bottom extends View {
     }
     private void drawArea(Game.State s) {
         java.util.List<int[]> rows = areaFor(s.mapGroup, s.mapNum);
-        int y = TOP_H + 4 - areaScroll, x = 8, kind = -1;
+        int y = AREA_TOP + 4 - areaScroll, x = 8, kind = -1;
         areaChips.clear();
         String place = s.mapSec >= 0 ? rom.mapName(s.mapSec) : "";
-        if (rows.isEmpty()) { window(8, TOP_H + 40, 232, 30); text("No wild Pokémon here.", 20, TOP_H + 47); return; }
-        c.save(); c.clipRect(0, TOP_H, W, BAR_Y);
-        if (!place.isEmpty()) { // where you are, like the Town Map's label
-            int lw = textW(place) + 12;
-            fill.setColor(skin.tb[6]); c.drawRect(8, y, 8 + lw, y + 16, fill);
-            text(place, 14, y + 1);
-            y += 20;
-        }
+        if (rows.isEmpty()) { window(8, AREA_TOP + 20, 232, 30); text("No wild Pokémon here.", 20, AREA_TOP + 27); areaHeader(place); return; }
+        c.save(); c.clipRect(0, AREA_TOP, W, BAR_Y);
         for (int[] r : rows) {
             if (r[0] * 8 + r[5] != kind) { // section label: method, and the time of day when it has its own list
                 if (x != 8) { y += 36; x = 8; }
                 kind = r[0] * 8 + r[5];
                 String label = AREA_KINDS[r[0]] + (r[5] == 0 ? "" : " - " + PERIODS[r[5]] + (r[5] == periodOf(s.hour) ? " (now)" : ""));
                 if (r[5] != 0) { c.drawBitmap(skin.item(PERIOD_ICONS[r[5]]), 6, y - 6, null); y += 6; } // Dawn / Sun / Dusk / Moon Stone
-                if (y + 2 >= TOP_H && y + 10 <= BAR_Y) small(label, r[5] != 0 ? 32 : 10, y + 2 - (r[5] != 0 ? 3 : 0)); // small() draws past the clip
+                if (y - 6 >= AREA_TOP && y + 10 <= BAR_Y) small(label, r[5] != 0 ? 32 : 10, y + 2 - (r[5] != 0 ? 3 : 0)); // small() draws past the clip
                 y += 13;
             }
             int nat = rom.nationalDex(r[1]);
             boolean seen = Game.dexFlag(s.dexSeen, nat), caught = Game.dexFlag(s.dexCaught, nat);
             window(x, y + (pressed == 201 + areaChips.size() ? 1 : 0), 56, 34);
-            c.save(); c.clipRect(x + 3, Math.max(TOP_H, y + 3), x + 53, Math.min(BAR_Y, y + 31));
+            c.save(); c.clipRect(x + 3, Math.max(AREA_TOP, y + 3), x + 53, Math.min(BAR_Y, y + 31));
             Bitmap ic = animIcon(r[1], 1, 1);
             c.drawBitmap(seen ? ic : silhouette(ic, skin.tb[9]), x - 2, y - 2, null); // unseen: a silhouette (no spoilers)
             if (caught) c.drawBitmap(skin.partyBalls[Skin.BALL_OK], x + 4, y + 22, null);
             c.restore();
             areaChips.add(new int[]{x, y, r[1]});
             String lv = r[2] == r[3] ? "ʟ" + r[2] : r[2] + "-" + r[3];
-            if (y + 6 >= TOP_H && y + 14 <= BAR_Y) small(lv, x + 54 - smallW(lv) - 3, y + 6);
-            if (r[4] > 0 && y + 19 >= TOP_H && y + 27 <= BAR_Y) { String pc = r[4] + "%"; small(pc, x + 54 - smallW(pc) - 3, y + 19); }
+            if (y + 6 >= AREA_TOP && y + 14 <= BAR_Y) small(lv, x + 54 - smallW(lv) - 3, y + 6);
+            if (r[4] > 0 && y + 19 >= AREA_TOP && y + 27 <= BAR_Y) { String pc = r[4] + "%"; small(pc, x + 54 - smallW(pc) - 3, y + 19); }
             x += 58;
             if (x + 56 > 244) { x = 8; y += 36; }
         }
         c.restore();
-        int content = y + (x != 8 ? 36 : 0) + areaScroll - (TOP_H + 4);
-        areaMaxScroll = Math.max(0, content - (BAR_Y - TOP_H - 6));
+        areaHeader(place); // drawn last: the list scrolls under an opaque band, nothing is cut off against the grid
+        int content = y + (x != 8 ? 36 : 0) + areaScroll - (AREA_TOP + 4);
+        areaMaxScroll = Math.max(0, content - (BAR_Y - AREA_TOP - 6));
         if (areaScroll > areaMaxScroll) areaScroll = areaMaxScroll;
+    }
+    private static final int AREA_TOP = TOP_H + 24; // under the fixed area-name header
+    /** Full-width header band with the area's name, like a window's title bar. */
+    private void areaHeader(String place) {
+        window(0, TOP_H - 2, W, 26);
+        text(place.isEmpty() ? "Area" : place, 10, TOP_H + 3);
     }
     private int areaScroll, areaMaxScroll, dragLastY = -1;
     private final java.util.ArrayList<int[]> areaChips = new java.util.ArrayList<>(); // {x, y, species} as drawn
@@ -666,18 +668,49 @@ final class Bottom extends View {
         swapMark(toggleX + TOGGLE_W - 16, 10 + d);
     }
 
-    private static final int RP_W = 160, RP_ROW = 24, RP_H = 4 * 24 + 12, RP_X = (248 - 160) / 2, RP_Y = (216 - RP_H) / 2;
+    private static final int RP_W = 160, RP_ROW = 24, RP_H = 6 * 24 + 12, RP_X = (248 - 160) / 2, RP_Y = (216 - RP_H) / 2;
     private void drawResetPrompt() {
         fill.setColor(0x90000000); c.drawRect(0, 0, W, H, fill);
+        if (game.slotPicker) { drawSlotPicker(); return; }
         window(RP_X, RP_Y, RP_W, RP_H);
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < Game.MENU_ROWS.length; i++) {
             boolean sel = game.menuCursor == i;
             int y = RP_Y + 6 + i * RP_ROW, d = pressed == 60 + i ? 1 : 0;
             rect(RP_X + 6, y + d, RP_W - 12, RP_ROW - 2, sel ? colDarkSel() : colDark());
-            String label = i == 2 && game.resetConfirm ? "Reset? Tap again" : Game.MENU_ROWS[i];
+            String label = game.confirmRow == i ? (i == 1 ? "Load? Tap again" : "Reset? Tap again")
+                    : i == Game.ROW_VOLUME ? "- Volume " + game.volume + "% +" : Game.MENU_ROWS[i];
             text(label, RP_X + (RP_W - textW(label)) / 2, y + 4 + d);
         }
     }
+    // Hold Load: every save state slot that has a file, newest first is not needed; slot order like the files
+    private static final int SP_W = 200, SP_ROW = 20, SP_ROWS = 8, SP_X = (W - SP_W) / 2, SP_Y = 8;
+    private java.util.List<String[]> slotRows = java.util.Collections.emptyList();
+    private void drawSlotPicker() {
+        slotRows = host.stateSlots(); // {slot, "date time"}
+        int[] ids = new int[slotRows.size()];
+        for (int i = 0; i < ids.length; i++) ids[i] = Integer.parseInt(slotRows.get(i)[0]);
+        game.pickerSlots = ids;
+        int n = Math.min(SP_ROWS, ids.length), top = Math.max(0, Math.min(game.pickerCursor - SP_ROWS + 1, ids.length - SP_ROWS));
+        window(SP_X, SP_Y, SP_W, 26 + Math.max(1, n) * SP_ROW + 6);
+        text("Load which state?", SP_X + 8, SP_Y + 6);
+        if (ids.length == 0) small("No save states yet.", SP_X + 10, SP_Y + 30);
+        for (int r = 0; r < n; r++) {
+            int i = top + r, y = SP_Y + 26 + r * SP_ROW, d = pressed == 240 + r ? 1 : 0;
+            boolean sel = game.pickerCursor == i;
+            rect(SP_X + 6, y + d, SP_W - 12, SP_ROW - 2, sel ? colDarkSel() : colDark());
+            String[] row = slotRows.get(i);
+            String name = game.confirmRow == 100 + ids[i] ? "Load? Tap again" : row[0].equals("0") ? "Quick save" : "Slot " + row[0];
+            small(name, SP_X + 12, y + 5 + d);
+            small(row[1], SP_X + SP_W - 12 - smallW(row[1]), y + 5 + d);
+        }
+        pickerTop = top;
+    }
+    private int pickerTop;
+    private boolean longPressed;
+    private void onLoadHold() { if (pressed == 61 && game.resetPrompt && !game.slotPicker) { longPressed = true; pressed = -1; game.openSlotPicker(); invalidate(); } }
+    private Runnable loadHold;
+    /** Both screens as one picture: the top as shown (with our battle text box) over the bottom, 4x. */
+    Bitmap snapshot() { return fb.copy(Bitmap.Config.ARGB_8888, false); }
 
     private boolean revealed, intro;
     private Bitmap fightIconBmp, ball2xBmp, cubeBmp, runBmp;
@@ -925,7 +958,7 @@ final class Bottom extends View {
             }
     }
 
-    private static final int[][] FIELD_DOUBLES = {{3, 106, 78}, {1, 146, 70}, {0, 102, 140}, {2, 142, 132}}; // battler, platform cx, cy
+    private static final int[][] FIELD_DOUBLES = {{3, 106, 70}, {1, 146, 78}, {0, 102, 132}, {2, 142, 140}}; // battler, platform cx, cy (left one higher, like the top screen)
     /** Top-left of a battler's icon on the battle field. */
     private static int[] fieldSpot(Game.Battle b, int who) {
         int up = (who & 1) == 1 && b.foeParty == null ? 10 : 0; // wild: no foe ball row to clear, so the foes sit higher
@@ -1407,12 +1440,15 @@ final class Bottom extends View {
     /** Top-screen overlay while the battle menus live down here: Unbound's plain message box + the prompt. */
     private final Bitmap topBox = Bitmap.createBitmap(240, 48, Bitmap.Config.ARGB_8888);
     private final Canvas topBoxCanvas = new Canvas(topBox);
+    private int promptBattler;
     Bitmap battleTopOverlay() {
         Game.Battle b = game.battle;
         if (b == null || b.passive || !b.topHold && (!b.inBattleScreen || (b.mode == Game.Battle.WAIT && !b.menuOnTop && !b.choosing && !b.bagOpen))) return null;
         topBox.eraseColor(0);
         topBoxCanvas.drawBitmap(skin.battleTextbox, 0, 0, null);
-        String prompt = b.choosing ? "Choose a Pokémon." : b.bagOpen ? "Choose an item." : b.mode == Game.Battle.TARGET ? "Choose a target." : "What will " + b.player.nick + " do?";
+        if (b.mode != Game.Battle.WAIT) promptBattler = b.battler; // between screens the game briefly reports nobody choosing
+        Game.BattleMon who = b.doubles && b.mons[promptBattler & 3] != null ? b.mons[promptBattler & 3] : b.player;
+        String prompt = b.choosing ? "Choose a Pokémon." : b.bagOpen ? "Choose an item." : b.mode == Game.Battle.TARGET ? "Choose a target." : "What will " + who.nick + " do?";
         for (int i = 0, x = 16; i < prompt.length(); i++) {
             Integer g = Rom.ENC.get(prompt.charAt(i));
             int gl = g == null ? 0xAC : g, w = rom.glyphWidth(gl);
@@ -1668,7 +1704,7 @@ final class Bottom extends View {
         };
         return new String[][]{
                 {"RetroAchievements", user == null ? "Log in" : user, "0"},
-                {"Hardcore", host.hardcore() ? "On" : "Off", "1"},
+                {"Top screen", host.pixelPerfect() ? "Pixel-perfect" : "Fill", "11"},
                 {"ROMs", host.romName(), "9"},
                 {"Save options", "", "8"},
                 {"About", "", "10"},
@@ -1723,6 +1759,7 @@ final class Bottom extends View {
             case 8: saveOptions = true; break;
             case 9: romsPage = true; break;
             case 10: aboutPage = true; break;
+            case 11: host.togglePixelPerfect(); break;
             case 0: if (host.raUser() == null) host.raLogin(); break;
             case 1: host.toggleHardcore(); break;
             case 2: host.pickRom(); break;
@@ -1775,11 +1812,15 @@ final class Bottom extends View {
         int hit = -1;
         boolean inSetButton = x >= SET_X && x < SET_X + SET_W && y >= SET_Y && y < SET_Y + SET_H;
         Game.Battle battle = game.battle;
-        if (game.resetPrompt) {
-            if (x >= RP_X && x < RP_X + RP_W && y >= RP_Y + 6 && y < RP_Y + 6 + 4 * RP_ROW) hit = 60 + (y - RP_Y - 6) / RP_ROW;
+        if (game.resetPrompt && game.slotPicker) {
+            int r = (y - SP_Y - 26) / SP_ROW;
+            if (x >= SP_X && x < SP_X + SP_W && y >= SP_Y + 26 && r < Math.min(SP_ROWS, game.pickerSlots.length)) hit = 240 + r;
+            else hit = 249; // outside the list: back to the menu
+        } else if (game.resetPrompt) {
+            if (x >= RP_X && x < RP_X + RP_W && y >= RP_Y + 6 && y < RP_Y + 6 + Game.MENU_ROWS.length * RP_ROW) hit = 60 + (y - RP_Y - 6) / RP_ROW;
         } else if (battle != null) hit = battleHit(battle, x, y);
         else if (game.inGame && game.state.party.length > 0) {
-            if (y >= BAR_Y) { for (int i = 0; i < BUTTON_ENTRY.length; i++) if (x >= buttonX(i) - 6 && x < buttonX(i) + 38) hit = i; }
+            if (y >= BAR_Y) { for (int i = 0; i < BUTTON_ENTRY.length; i++) if (x >= buttonX(i) - 6 && x < buttonX(i) + 38 && game.state.menuOn[BUTTON_ENTRY[i]]) hit = i; } // locked: no tap
             else if (x >= toggleX - 2 && x < toggleX + TOGGLE_W + 2 && y < TOP_H) hit = 50; // party -> map -> area
             else if (owMenuHit(x, y) >= 0) hit = owMenuHit(x, y);
             else if (mapShown() && x >= SIDE_X && y >= TOP_H && y < BAR_Y) { // party column -> summary
@@ -1791,7 +1832,7 @@ final class Bottom extends View {
             }
             else if (owView == 2 && dexSpecies > 0 && y >= TOP_H && y < BAR_Y) hit = 199 + 1; // close the entry (200)
             else if (owView == 2 && y >= TOP_H && y < BAR_Y) {
-                for (int i = 0; i < areaChips.size(); i++) { int[] ch = areaChips.get(i); if (x >= ch[0] && x < ch[0] + 56 && y >= ch[1] && y < ch[1] + 34 && ch[1] >= TOP_H - 20) hit = 201 + i; }
+                for (int i = 0; i < areaChips.size(); i++) { int[] ch = areaChips.get(i); if (x >= ch[0] && x < ch[0] + 56 && y >= ch[1] && y < ch[1] + 34 && ch[1] + 20 >= AREA_TOP) hit = 201 + i; }
             }
             else if (owGiveFor >= 0 && y >= TOP_H && y < BAR_Y) {
                 if (y < GIVE_Y && x >= W - 78) hit = 170;
@@ -1802,7 +1843,7 @@ final class Bottom extends View {
                 int slot = ((y - TOP_H - 4) / 45) * 2 + (x >= 128 ? 1 : 0);
                 if (slot < game.state.party.length) hit = 20 + slot;
             }
-            else if (y < TOP_H && x < 40) hit = 10;          // trainer card
+            else if (y < TOP_H && x < 40 && game.state.menuOn[Game.TRAINER_CARD]) hit = 10; // trainer card
             else if (y < TOP_H && x >= W - 40) hit = 11;     // options
         } else if (settingsOpen) {
             if (inSetButton) hit = 199;
@@ -1810,6 +1851,9 @@ final class Bottom extends View {
         } else if (game.onTitle && x >= COG_X - 6 && y >= COG_Y - 6) hit = 198;
         switch (e.getActionMasked()) {
             case MotionEvent.ACTION_DOWN: {
+                if (loadHold == null) loadHold = this::onLoadHold;
+                longPressed = false; removeCallbacks(loadHold);
+                if (hit == 61 && game.resetPrompt) postDelayed(loadHold, 450); // hold Load: pick any slot
                 if (battle == null && game.inGame && game.state.fieldBusy && hit >= 0 && hit < 200 && !(game.state.startMenuOpen && hit < 12)) hit = -1; // greyed out (the bar still works over the start menu)
                 dragFrom = hit; pressed = hit; dragLastY = y; dragging = false; moved = false; tapX = x; tapY = y; bagDrag = 0;
                 boolean slotHit = hit >= 20 && hit < 26, menuRow = hit >= 160 && hit < 164;
@@ -1848,11 +1892,16 @@ final class Bottom extends View {
                     else { slideA = a; slideB = -1; slideFromAX = fx; slideFromAY = fy; slideStart = android.os.SystemClock.uptimeMillis(); }
                     pressed = -1; break;
                 }
+                if (loadHold != null) removeCallbacks(loadHold);
+                if (longPressed) { longPressed = false; pressed = -1; break; }
                 if (moved) { pressed = -1; break; }
                 if (hit == pressed && hit >= 0) {
                     performClick();
                     if (hit == 50) { owView = nextView(); owMenuSlot = -1; owSwitchFrom = -1; }
-                    else if (hit >= 60 && hit < 64 && game.resetPrompt) { game.menuCursor = hit - 60; game.menuPick(hit - 60); }
+                    else if (hit == 60 + Game.ROW_VOLUME && game.resetPrompt) { game.menuCursor = Game.ROW_VOLUME; game.adjustVolume(lastTouchX < W / 2 ? -10 : 10); }
+                    else if (hit >= 60 && hit < 60 + Game.MENU_ROWS.length && game.resetPrompt) { game.menuCursor = hit - 60; game.menuPick(hit - 60); }
+                    else if (hit >= 240 && hit < 249 && game.slotPicker) game.pickSlot(pickerTop + hit - 240);
+                    else if (hit == 249 && game.slotPicker) { game.slotPicker = false; game.confirmRow = -1; game.chime(); }
                     else if (hit >= 30 && hit < 50) { if (battle != null) battleTap(hit); }
                     else if ((hit == 230 || hit == 231) && battle != null && battle.yesNo >= 0) game.battleYesNo(hit - 230); // the game plays its own select sound
                     else if (hit >= 70 && hit < 74) { if (battle != null && battle.mode == Game.Battle.TARGET) battleTap(hit); }

@@ -47,6 +47,7 @@ adb shell am broadcast -a dev.gbads.WILD --ei sp <species> --ei lv <level> [--ei
 adb shell am broadcast -a dev.gbads.SCRIPT --es hex <script bytes>
 adb shell am broadcast -a dev.gbads.POKE --ei a <address> --ei v <byte>
 adb shell am broadcast -a dev.gbads.DUMP --es tag <name>   # RAM dump to Download/gbads/<name>.bin
+adb shell am broadcast -a dev.gbads.PICK                   # the first-run ROM picker (tests bad-ROM recovery)
 ```
 `tools/thor.sh` wraps these for the AYN Thor (keys, taps, screenshots of both screens, states). Other tools: `thumbdis.py` (Thumb disassembler for ROM addresses), `gbagfx.py` / `fontdump.py` (graphics and font extraction), `romprobe.py`, `savparty.py`.
 

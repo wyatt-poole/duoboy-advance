@@ -4,6 +4,8 @@ The top screen is always the game. The bottom screen changes with what you're do
 
 ## First setup
 
+On the very first launch DuoBoy lists the ROMs it can find (supported games first, marked ✓; a `.zip` is unpacked for you). If the game already has a save — next to the ROM, or in RetroArch's `saves/mGBA` — it offers to use it, so both apps keep sharing that file.
+
 1. **File access.** On first launch, allow "All files access". Saves are kept as normal files next to your ROM so other emulators (and sync tools like Syncthing) can use the same save.
 2. **Add your game.** Title screen → cog (bottom right) → **ROMs**:
    - **ROM folder:** pick the folder with your ROMs; supported games in it are listed.
@@ -53,13 +55,18 @@ If a battle type isn't supported yet (link battles, Battle Frontier facilities, 
 
 ## Save states and speed
 
-- **Start + Select** (held together): quick save state, quick load state, reset (asks first), or cancel.
+- **Start + Select** (held together): save state, load state (asks once more; **hold** Load to pick any slot), screenshot (both screens, into `Pictures/DuoBoy Advance`), reset (asks first), or cancel.
 - **R2** (hold): fast forward.
 - Save states are separate from your in-game save. Your `.sav`/`.srm` only changes when you save in the game.
+- States and daily backups are kept in `DuoBoy Advance/` on the device's storage, so they survive reinstalling the app.
 
 ## RetroAchievements
 
 Settings → **RetroAchievements** to log in (only a login token is stored, never your password). Unlocks pop up on the bottom screen. Hardcore mode is available but RetroAchievements currently rejects hardcore unlocks from emulators it hasn't approved, so softcore is the default.
+
+## Top screen scaling
+
+Settings → **Top screen**: *Fill* stretches the game to the screen's height (the default); *Pixel-perfect* uses whole-number scaling, so every game pixel is the same size, with small black borders.
 
 ## Backups
 

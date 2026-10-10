@@ -26,6 +26,10 @@ final class Game {
         boolean startMenuOpen; // the game's own start menu: the bottom bar still works then
         boolean fieldBusy; // not free for a while: the bottom party is greyed out and ignores taps
         int mapSec = -1;
+        /** The game's DexNav is unlocked (start-menu entry 1's flag, asked of FlagGet); dev builds: always. */
+        boolean dexNav;
+        /** Per start-menu entry: unlocked in this save (its table flag), so the bottom bar greys out what the game would hide. */
+        boolean[] menuOn = new boolean[10];
         int swapSeq; // overworld swaps so far: the bottom screen slides the cards when this changes
         int hour; // RTC hour (Unbound keeps it at 0x03005EA0 +6)
         byte[] dexSeen = new byte[125], dexCaught = new byte[125]; // bit (n-1) for national number n
@@ -468,7 +472,10 @@ final class Game {
     /** Bottom-screen battle input: set the game's cursor, then one A (or B / Start) press. */
     // Touch thread -> emu thread: one pending request, applied at the next poll.
     private volatile int pendingCursorAddr, pendingCursor, pendingKey;
-    void battleAction(int action) { pendingCursorAddr = ACTION_CURSOR; pendingCursor = action; pendingKey = Core.A; }
+    void battleAction(int action) {
+        if (action == B_ACTION_RUN) topHold = 45; // fleeing: no flash of the game's menu before "Got away safely!"
+        pendingCursorAddr = ACTION_CURSOR; pendingCursor = action; pendingKey = Core.A;
+    }
     void battleMove(int slot) { pendingCursorAddr = MOVE_CURSOR; pendingCursor = slot; pendingKey = Core.A; }
     // ---- target select: the game's cursor (gMultiUsePlayerCursor) and its blinking battler sprite ----
     static final int BATTLER_SPRITE_IDS = 0x02023D44, TARGET_IDENTITIES = 0x08250980; // sTargetIdentities: the d-pad cycle order
@@ -1196,9 +1203,9 @@ final class Game {
         int pressedNow = keys & ~prevPadKeys;
         prevPadKeys = keys;
         if (pressedNow != 0) inputSeq++;
-        if (resetPrompt) { resetPromptKeys(pressedNow); return 0; }
+        if (resetPrompt) { resetPromptKeys(keys, pressedNow); return 0; }
         if ((keys & (Core.START | Core.SELECT)) == (Core.START | Core.SELECT) && (pressedNow & (Core.START | Core.SELECT)) != 0) {
-            resetPrompt = true; menuCursor = 0; resetConfirm = false; return 0;
+            resetPrompt = true; menuCursor = 0; confirmRow = -1; slotPicker = false; return 0;
         }
         if (pressedNow != 0 && dismissMessage()) return 0; // like the game's text boxes: the first press only clears the message
         if (b == null || safeMode || b.passive) return keys;
@@ -1212,6 +1219,7 @@ final class Game {
             return keys & ~(Core.UP | Core.DOWN);
         }
         if (b.mode != Battle.ACTION) return keys;
+        if ((pressedNow & Core.R) != 0 && b.quickRunWithR) topHold = 45; // Quick Run: no flash of the game's menu
         if ((pressedNow & Core.L) != 0 && (b.quickBall || b.fallbackBall != 0)) { battleQuickBall(); return keys & ~Core.L; } // one path for L and taps
         int dpad = Core.UP | Core.DOWN | Core.LEFT | Core.RIGHT;
         if ((pressedNow & dpad) != 0) {
@@ -1245,31 +1253,69 @@ final class Game {
     volatile boolean resetPrompt, resetYes;
     private volatile int resetAnswer; // set by touch: 1 yes, 2 no
     void answerReset(boolean yes) { resetAnswer = yes ? 1 : 2; }
-    /** Start+Select menu: 0 Save state, 1 Load state, 2 Reset game (asks once more), 3 Cancel. */
-    static final String[] MENU_ROWS = {"Save state", "Load state", "Reset game", "Cancel"};
+    /** Start+Select menu: 0 Save state, 1 Load state (asks once more; hold for any slot), 2 Screenshot, 3 Reset game (asks), 4 Cancel. */
+    static final String[] MENU_ROWS = {"Save state", "Load state", "Screenshot", "Volume", "Reset game", "Cancel"};
+    static final int ROW_VOLUME = 3, ROW_RESET = 4;
+    /** 0..100, applied to the audio track by MainActivity. */
+    volatile int volume = 100;
+    void adjustVolume(int delta) { volume = Math.max(0, Math.min(100, volume + delta)); chime(); }
     volatile int menuCursor;
-    volatile boolean resetConfirm;
-    /** For MainActivity: 1 save / 2 load the quick slot (taken by the emu thread). */
-    volatile int stateRequest;
+    /** Row waiting for its second press (1 load, 3 reset, 100+n slot n in the picker), else -1. */
+    volatile int confirmRow = -1;
+    /** For MainActivity: 1 save the quick slot / 2 load slot stateLoadSlot (taken by the emu thread). */
+    volatile int stateRequest, stateLoadSlot;
+    /** Frames until a dual-screen screenshot is taken (the menu closes first). */
+    volatile int screenshotReq;
+    // slot picker (hold Load): the bottom screen fills pickerSlots with the slots that have a file
+    volatile boolean slotPicker;
+    volatile int pickerCursor;
+    volatile int[] pickerSlots = new int[0];
+    private int loadHeld;
+    void openSlotPicker() { slotPicker = true; pickerCursor = 0; confirmRow = -1; chime(); }
+    void pickSlot(int i) {
+        int[] sl = pickerSlots;
+        if (i < 0 || i >= sl.length) return;
+        chime();
+        pickerCursor = i;
+        if (confirmRow == 100 + sl[i]) { stateLoadSlot = sl[i]; stateRequest = 2; resetAnswer = 2; }
+        else confirmRow = 100 + sl[i];
+    }
     void menuPick(int row) {
         chime();
         if (row == 0) { stateRequest = 1; resetAnswer = 2; }
-        else if (row == 1) { stateRequest = 2; resetAnswer = 2; }
-        else if (row == 2) { if (resetConfirm) resetAnswer = 1; else resetConfirm = true; }
+        else if (row == 1) { if (confirmRow == 1) { stateLoadSlot = 0; stateRequest = 2; resetAnswer = 2; } else confirmRow = 1; }
+        else if (row == 2) { screenshotReq = 4; resetAnswer = 2; }
+        else if (row == ROW_VOLUME) return; // adjusted with left / right or the row's halves
+        else if (row == ROW_RESET) { if (confirmRow == ROW_RESET) resetAnswer = 1; else confirmRow = ROW_RESET; }
         else resetAnswer = 2;
     }
-    private void resetPromptKeys(int pressedNow) {
-        if ((pressedNow & Core.UP) != 0) { menuCursor = (menuCursor + 3) % 4; resetConfirm = false; chime(); }
-        if ((pressedNow & Core.DOWN) != 0) { menuCursor = (menuCursor + 1) % 4; resetConfirm = false; chime(); }
+    private void resetPromptKeys(int keys, int pressedNow) {
+        if (slotPicker) {
+            int n = Math.max(1, pickerSlots.length);
+            if ((pressedNow & Core.UP) != 0) { pickerCursor = (pickerCursor + n - 1) % n; confirmRow = -1; chime(); }
+            if ((pressedNow & Core.DOWN) != 0) { pickerCursor = (pickerCursor + 1) % n; confirmRow = -1; chime(); }
+            if ((pressedNow & Core.B) != 0) { slotPicker = false; confirmRow = -1; chime(); }
+            if ((pressedNow & Core.A) != 0) pickSlot(pickerCursor);
+            return;
+        }
+        int rows = MENU_ROWS.length;
+        if ((pressedNow & Core.UP) != 0) { menuCursor = (menuCursor + rows - 1) % rows; confirmRow = -1; chime(); }
+        if ((pressedNow & Core.DOWN) != 0) { menuCursor = (menuCursor + 1) % rows; confirmRow = -1; chime(); }
+        if (menuCursor == ROW_VOLUME && (pressedNow & Core.LEFT) != 0) adjustVolume(-10);
+        if (menuCursor == ROW_VOLUME && (pressedNow & Core.RIGHT) != 0) adjustVolume(10);
         if ((pressedNow & Core.B) != 0) { resetAnswer = 2; chime(); }
-        if ((pressedNow & Core.A) != 0) menuPick(menuCursor);
+        // A on Load: a tap asks to confirm; holding it (half a second) opens the slot list
+        if (menuCursor == 1 && (keys & Core.A) != 0) { if (++loadHeld == 30) openSlotPicker(); }
+        else if (menuCursor == 1 && loadHeld > 0 && loadHeld < 30) { loadHeld = 0; menuPick(1); }
+        else loadHeld = 0;
+        if ((pressedNow & Core.A) != 0 && menuCursor != 1) menuPick(menuCursor);
     }
     /** Emu thread, once per frame. */
     private void applyResetAnswer() {
         int a = resetAnswer;
         if (a == 0) return;
         resetAnswer = 0;
-        resetPrompt = false;
+        resetPrompt = false; slotPicker = false; confirmRow = -1;
         if (a == 1) { Core.reset(); Ra.reset(); inGame = false; battle = null; target = -1; touchSession = false; freezeTop = false; fade = 0; }
     }
     /**
@@ -1380,7 +1426,12 @@ final class Game {
         applyResetAnswer();
         if (pendingYesNoCursor >= 0) { if (battle != null && battle.yesNo >= 0) Core.write8(0x02023E83, pendingYesNoCursor); pendingYesNoCursor = -1; }
         if (tapA > 0) tapA--;
-        awaitingA = (inBattle() || inOverworld() && Core.read8(0x03000F9C) != 0) && textWaiting();
+        // sMsgIsSignpost (0x03000FA1): sign text you can walk away from isn't a cutscene: no dim, no tap-for-A
+        awaitingA = (inBattle() || inOverworld() && Core.read8(0x03000F9C) != 0 && Core.read8(0x03000FA1) == 0) && textWaiting();
+        if (!awaitingA && inBattle()) { // the level-up stats box (drawlvlupbox, 0x6C) waits for A too
+            int ins = Core.read32(0x02023D74);
+            awaitingA = (ins >>> 25 == 4 || ins >>> 24 == 2) && Core.read8(ins) == 0x6C;
+        }
         if (pendingYesNo >= 0) { // the handler reads gBattleCommunication[CURSOR_POSITION] when A arrives
             Battle bt = battle;
             if (bt == null || bt.yesNo < 0) pendingYesNo = -1;
@@ -1455,6 +1506,17 @@ final class Game {
         s.fieldBusy = busyPolls >= 2;
         s.startMenuOpen = barOpen();
         s.mapSec = Core.read8(MAP_HEADER + 0x14);
+        if (barOpen()) { // the game's own visible list (sStartMenuOrder), rebuilt each time the bar opens: exact, no flag guessing
+            int cnt = Math.min(10, Core.read8(SM_COUNT));
+            byte[] ord = new byte[cnt];
+            Core.read(SM_ORDER, ord);
+            java.util.Arrays.fill(menuFlag, false);
+            for (byte b : ord) if (b >= 0 && b < 10) menuFlag[b] = true;
+            menuSeen = true;
+        }
+        if (!menuSeen) java.util.Arrays.fill(menuFlag, true); // until the player opens the bar once, assume everything
+        s.menuOn = menuFlag.clone();
+        s.dexNav = menuFlag[1] || BuildConfig.EXPERIMENTAL;
         if (sb1 >>> 24 == 2) { byte[] loc = new byte[2]; Core.read(sb1 + 4, loc); s.mapGroup = loc[0] & 0xFF; s.mapNum = loc[1] & 0xFF; }
         state = s;
     }
@@ -1530,7 +1592,10 @@ final class Game {
     int macroKeys() { return held | (tapA >= 2 ? Core.A : 0); }
 
     // ---- overworld party: reorder / take held item, straight in gPlayerParty (only in the field, no menu running) ----
-    private int swapCount, busyPolls; // completed overworld swaps, published with the party in State.swapSeq
+    private int swapCount, busyPolls;
+    private final boolean[] menuFlag = new boolean[10];
+    private boolean menuSeen;
+    static final int FLAG_GET = 0x0806E6D1; // FlagGet(flagId) (Unbound hooks it for its expanded flags) // completed overworld swaps, published with the party in State.swapSeq
     private volatile int owSwapA = -1, owSwapB = -1, owTakeSlot = -1;
     void partySwap(int a, int b) { owSwapB = b; owSwapA = a; }
     void partyTakeItem(int slot) { owTakeSlot = slot; }
@@ -1564,7 +1629,7 @@ final class Game {
         return true;
     }
     /** In the field with control: no script / menu / hook running (sLockFieldControls, ArePlayerFieldControlsLocked). */
-    private boolean fieldFree() { return !safeMode && inOverworld() && target < 0 && !fading() && Core.read8(0x03000F9C) == 0; }
+    private boolean fieldFree() { return !safeMode && inOverworld() && target < 0 && !fading() && (Core.read8(0x03000F9C) == 0 || Core.read8(0x03000FA1) != 0); } // a sign leaves the bottom as is
     private boolean fieldIdle() {
         boolean idle = fieldFree();
         if (!idle) toast("Not right now.");

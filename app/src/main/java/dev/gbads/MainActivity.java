@@ -37,24 +37,59 @@ public final class MainActivity extends Activity implements Bottom.Host {
     private volatile String stateOp;
     private volatile int pokeAddr, pokeVal;
     private volatile int stateSlot;
-    /** One file per ROM and slot in the app's external files dir (not next to the save: states aren't Syncthing'd). */
+    /** DuoBoy's own folder on shared storage: survives an uninstall (the app-private dir doesn't). Old files are moved over once. */
+    private File appDir(String sub) {
+        File dir = new File(Environment.getExternalStorageDirectory(), "DuoBoy Advance/" + sub);
+        dir.mkdirs();
+        File old = getExternalFilesDir(sub);
+        File[] fs = old == null ? null : old.listFiles();
+        if (fs != null) for (File f : fs) if (f.isFile() && !new File(dir, f.getName()).exists()) f.renameTo(new File(dir, f.getName()));
+        return dir;
+    }
+    /** One file per ROM and slot (not next to the save: states aren't Syncthing'd). */
     File statePath(int slot) {
         String rom = getPreferences(MODE_PRIVATE).getString("rom", "rom");
-        File dir = new File(getExternalFilesDir(null), "states");
-        dir.mkdirs();
-        return new File(dir, new File(rom).getName().replaceAll("[.]gba$", "") + ".ss" + slot);
+        return new File(appDir("states"), new File(rom).getName().replaceAll("[.]gba$", "") + ".ss" + slot);
     }
     void requestState(String op, int slot) { stateSlot = slot; stateOp = op; }
+    @Override public java.util.List<String[]> stateSlots() {
+        java.util.ArrayList<String[]> out = new java.util.ArrayList<>();
+        java.text.SimpleDateFormat f = new java.text.SimpleDateFormat("MM/dd HH:mm", java.util.Locale.US);
+        for (int i = 0; i < 100; i++) { File st = statePath(i); if (st.exists()) out.add(new String[]{String.valueOf(i), f.format(new java.util.Date(st.lastModified()))}); }
+        return out;
+    }
+    /** Start+Select → Screenshot: both screens as shown, stacked like the handheld, 4x, into Pictures/DuoBoy Advance. */
+    private void saveScreenshot() {
+        Bitmap shot = Bitmap.createBitmap(248, 376, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(shot);
+        c.drawColor(0xFF000000);
+        synchronized (screen) { c.drawBitmap(screen, 4, 0, null); }
+        Bitmap over = bottomView != null ? bottomView.battleTopOverlay() : null;
+        if (over != null) c.drawBitmap(over, 4, 112, null);
+        if (bottomView != null) c.drawBitmap(bottomView.snapshot(), 0, 160, null);
+        Bitmap big = Bitmap.createScaledBitmap(shot, 248 * 4, 376 * 4, false);
+        String name = "DuoBoy_" + new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(new java.util.Date()) + ".png";
+        android.content.ContentValues v = new android.content.ContentValues();
+        v.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, name);
+        v.put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png");
+        v.put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/DuoBoy Advance");
+        Uri uri = getContentResolver().insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v);
+        boolean ok = false;
+        if (uri != null) try (java.io.OutputStream o = getContentResolver().openOutputStream(uri)) { ok = big.compress(Bitmap.CompressFormat.PNG, 100, o); } catch (Exception ignored) {}
+        Ra.toasts.add(new Ra.Toast(ok ? "Screenshot saved" : "Couldn't save screenshot", "", 1500));
+    }
     /** Emu thread, between frames. */
     private void runStateOp() {
         int req = game.stateRequest;
         if (req != 0) {
             game.stateRequest = 0;
-            String path = statePath(0).getPath();
+            int slot = req == 2 ? game.stateLoadSlot : 0;
+            String path = statePath(slot).getPath();
             boolean ok = req == 1 ? Core.saveState(path) : new File(path).exists() && Core.loadState(path);
             if (ok && req == 2) game.onStateLoaded();
-            Ra.toasts.add(new Ra.Toast(req == 1 ? (ok ? "State saved" : "Couldn't save state") : (ok ? "State loaded" : "No saved state yet"), "", 1500));
+            Ra.toasts.add(new Ra.Toast(req == 1 ? (ok ? "State saved" : "Couldn't save state") : (ok ? (slot == 0 ? "State loaded" : "Slot " + slot + " loaded") : "No saved state yet"), "", 1500));
         }
+        if (game.screenshotReq > 0 && --game.screenshotReq == 0) runOnUiThread(this::saveScreenshot); // after the menu has closed
         if (pokeAddr != 0) { Core.write8(pokeAddr, pokeVal); pokeAddr = 0; }
         String op = stateOp;
         if (op == null) return;
@@ -131,6 +166,14 @@ public final class MainActivity extends Activity implements Bottom.Host {
         registerReceiver(new android.content.BroadcastReceiver() {
             @Override public void onReceive(Context c, Intent i) { if (game != null) game.debugWild(i.getIntExtra("sp", 0), i.getIntExtra("lv", 5), i.getIntExtra("sp2", -1)); }
         }, new android.content.IntentFilter("dev.gbads.WILD"), RECEIVER_EXPORTED);
+        // fast forward for tests: `adb shell am broadcast -a dev.gbads.FF --ei on 1|0`
+        registerReceiver(new android.content.BroadcastReceiver() {
+            @Override public void onReceive(Context c, Intent i) { fastForward = i.getIntExtra("on", 0) != 0; }
+        }, new android.content.IntentFilter("dev.gbads.FF"), RECEIVER_EXPORTED);
+        // first-run ROM picker: `adb shell am broadcast -a dev.gbads.PICK` (tests the picker / bad-ROM recovery from a running game)
+        registerReceiver(new android.content.BroadcastReceiver() {
+            @Override public void onReceive(Context c, Intent i) { runOnUiThread(() -> pickRom()); }
+        }, new android.content.IntentFilter("dev.gbads.PICK"), RECEIVER_EXPORTED);
         // save states: `adb shell am broadcast -a dev.gbads.STATE --es op save|load --ei slot N`
         registerReceiver(new android.content.BroadcastReceiver() {
             @Override public void onReceive(Context c, Intent i) { stateOp = i.getStringExtra("op"); stateSlot = i.getIntExtra("slot", 0); }
@@ -152,45 +195,123 @@ public final class MainActivity extends Activity implements Bottom.Host {
         pickRom();
     }
 
-    /** First launch, or Settings > ROM. Choosing a ROM restarts the app on it. */
+    /** First launch, or Settings > ROM. Supported games are listed first and marked; a .zip is unpacked next to itself. */
     @Override public void pickRom() {
-        SharedPreferences prefs = getPreferences(MODE_PRIVATE);
-        ArrayList<File> found = new ArrayList<>();
+        ArrayList<File> found = new ArrayList<>(), ordered = new ArrayList<>();
         scan(Environment.getExternalStorageDirectory(), 4, found);
-        String[] names = new String[found.size()];
-        for (int i = 0; i < names.length; i++) names[i] = found.get(i).getPath().replace(Environment.getExternalStorageDirectory().getPath() + "/", "");
-        new AlertDialog.Builder(this).setTitle(found.isEmpty() ? "No .gba files found" : "Pick a ROM")
-                .setItems(names, (d, i) -> {
-                    prefs.edit().putString("rom", found.get(i).getPath()).commit();
-                    if (game == null) boot(found.get(i).getPath()); else restart();
-                })
-                .setCancelable(game != null).show();
+        String root = Environment.getExternalStorageDirectory().getPath() + "/";
+        ArrayList<String> names = new ArrayList<>();
+        for (int pass = 0; pass < 2; pass++) // supported first
+            for (File f : found) {
+                String t = f.getName().toLowerCase().endsWith(".gba") ? supportedTitle(f) : null;
+                if ((t != null) != (pass == 0)) continue;
+                ordered.add(f);
+                names.add((t != null ? "\u2713 " + t + "\n" : "") + f.getPath().replace(root, ""));
+            }
+        AlertDialog.Builder b = new AlertDialog.Builder(this)
+                .setTitle(found.isEmpty() ? "No ROMs found" : "Pick a ROM")
+                .setPositiveButton("Browse\u2026", (d, i) -> addRom())
+                .setNeutralButton("Rescan", (d, i) -> pickRom())
+                .setCancelable(game != null);
+        if (found.isEmpty()) b.setMessage("Copy your Pok\u00e9mon Unbound .gba (or .zip) to the device, then tap Rescan.");
+        else b.setItems(names.toArray(new String[0]), (d, i) -> useRom(ordered.get(i).getPath()));
+        b.show();
+    }
+    /** A chosen ROM file (.gba or .zip): unzip if needed, then boot or restart on it. */
+    private void useRom(String path) {
+        if (path.toLowerCase(java.util.Locale.ROOT).endsWith(".zip")) {
+            File out = new File(path.substring(0, path.length() - 4) + ".gba");
+            try (java.io.InputStream in = new java.io.FileInputStream(path)) {
+                byte[] gba = Patcher.readRom(in, true);
+                if (!out.exists()) try (java.io.FileOutputStream fo = new java.io.FileOutputStream(out)) { fo.write(gba); }
+            } catch (Exception e) { toast("Couldn't unzip: " + e.getMessage()); if (game == null) pickRom(); return; }
+            path = out.getPath();
+        }
+        getPreferences(MODE_PRIVATE).edit().putString("rom", path).commit();
+        if (game == null) boot(path); else restart();
     }
 
+    /** Only zips that hold a .gba (not patches, drivers, ...): reads the zip's directory, no unpacking. */
+    private static boolean zipHasGba(File f) {
+        try (java.util.zip.ZipFile z = new java.util.zip.ZipFile(f)) {
+            for (java.util.Enumeration<? extends java.util.zip.ZipEntry> e = z.entries(); e.hasMoreElements(); )
+                if (e.nextElement().getName().toLowerCase().endsWith(".gba")) return true;
+        } catch (Exception ignored) {}
+        return false;
+    }
     private static void scan(File dir, int depth, ArrayList<File> out) {
         File[] fs = dir.listFiles();
         if (fs == null) return;
         for (File f : fs) {
+            String n = f.getName().toLowerCase();
             if (f.isDirectory() && depth > 0 && !f.getName().equals("Android")) scan(f, depth - 1, out);
-            else if (f.getName().toLowerCase().endsWith(".gba")) out.add(f);
+            else if (n.endsWith(".gba") || n.endsWith(".zip") && f.length() > 0x400000 && f.length() < 0x4000000 && zipHasGba(f)) out.add(f);
         }
     }
 
+    /** A save file with nothing in it yet (fresh flash is all 0xFF), e.g. the one a first boot creates. */
+    private static boolean blankSave(File f) {
+        if (!f.exists()) return true;
+        try (java.io.InputStream in = new java.io.FileInputStream(f)) {
+            byte[] buf = new byte[8192];
+            for (int n; (n = in.read(buf)) > 0; ) for (int i = 0; i < n; i++) if (buf[i] != (byte) 0xFF) return false;
+        } catch (java.io.IOException e) { return false; }
+        return true;
+    }
+    /** Where a save for this game may already be, from other emulators: same folder, then RetroArch's. */
+    private File findExistingSave(String rom) {
+        String name = rom.substring(rom.lastIndexOf('/') + 1, rom.lastIndexOf('.')), dir = rom.substring(0, rom.lastIndexOf('/'));
+        String sd = Environment.getExternalStorageDirectory().getPath();
+        for (String d : new String[]{dir, sd + "/RetroArch/saves/mGBA", sd + "/RetroArch/saves", sd + "/mGBA/saves", sd + "/Saves"})
+            for (String ext : new String[]{".srm", ".sav"}) { File f = new File(d, name + ext); if (f.length() >= 0x8000 && !blankSave(f)) return f; }
+        return null;
+    }
     private void boot(String romPath) {
+        SharedPreferences prefs = getPreferences(MODE_PRIVATE);
+        String romKey = "setup:" + romPath;
+        if (!prefs.getBoolean(romKey, false) && blankSave(new File(savePath(romPath)))) { // first boot of this ROM: adopt a save it already has
+            File found = findExistingSave(romPath);
+            if (found != null) {
+                String shown = found.getPath().replace(Environment.getExternalStorageDirectory().getPath() + "/", "");
+                new AlertDialog.Builder(this).setTitle("Existing save found")
+                        .setMessage("There's already a save for this game at\n" + shown + "\n\nUse it? DuoBoy keeps saving there, so other emulators see the same progress.")
+                        .setPositiveButton("Use it", (d, i) -> {
+                            String ext = found.getName().substring(found.getName().lastIndexOf('.'));
+                            SharedPreferences.Editor e = prefs.edit().putBoolean(romKey, true).putString("save_ext", ext);
+                            if (found.getParent().equals(romPath.substring(0, romPath.lastIndexOf('/')))) e.remove("save_dir"); else e.putString("save_dir", found.getParent());
+                            e.commit();
+                            boot(romPath);
+                        })
+                        .setNegativeButton("Start fresh", (d, i) -> { prefs.edit().putBoolean(romKey, true).commit(); boot(romPath); })
+                        .setCancelable(false).show();
+                return;
+            }
+        }
+        prefs.edit().putBoolean(romKey, true).apply();
+        appDir("states"); // move any states / backups out of the app-private folder now, not on first use
+        String sav = savePath(romPath);
         try {
             game = new Game(new Rom(new File(romPath)));
             if (game.safeMode) toast("Untested Unbound version: DuoBoy's bottom-screen extras are limited.");
-        } catch (Exception e) {
-            new AlertDialog.Builder(this).setMessage("Can't read ROM: " + e).show();
-            return;
+            buildScreens(romPath, sav);
+        } catch (Throwable e) { // a ROM we can't run (not Unbound, truncated, ...): never crash-loop on it
+            android.util.Log.e("gbads", "can't boot " + romPath, e);
+            game = null; bottomView = null;
+            prefs.edit().remove("rom").commit();
+            String title = supportedTitle(new File(romPath));
+            new AlertDialog.Builder(this).setTitle("Can't run this ROM")
+                    .setMessage(new File(romPath).getName() + (title == null ? "\n\nOnly Pok\u00e9mon Unbound 2.1.1.1 is supported right now." : "\n\n" + e))
+                    .setPositiveButton("Pick another", (d, i) -> pickRom()).setCancelable(false).show();
         }
-        String sav = savePath(romPath);
+    }
+    private void buildScreens(String romPath, String sav) {
         top = new View(this) {
             final Paint p = new Paint(), fadePaint = new Paint(); final Rect dst = new Rect(), ovDst = new Rect();
             { p.setFilterBitmap(false); } // hard pixels; Android filters scaled bitmaps by default
             @Override protected void onDraw(Canvas c) {
                 // Fill the screen keeping 3:2. ponytail: non-integer (6.75x on the Thor); add an integer-scale option if shimmer bothers anyone
                 float s = Math.min(getWidth() / 240f, getHeight() / 160f);
+                if (pixelPerfect()) s = Math.max(1, (float) Math.floor(s)); // whole multiples: every game pixel the same size
                 int w = Math.round(240 * s), h = Math.round(160 * s), ox = (getWidth() - w) / 2, oy = (getHeight() - h) / 2;
                 dst.set(ox, oy, ox + w, oy + h);
                 synchronized (screen) { c.drawBitmap(screen, null, dst, p); }
@@ -261,6 +382,8 @@ public final class MainActivity extends Activity implements Bottom.Host {
 
     // ---------- Settings (bottom screen) ----------
     @Override public String raUser() { return getPreferences(MODE_PRIVATE).getString("ra_token", null) == null ? null : getPreferences(MODE_PRIVATE).getString("ra_user", ""); }
+    @Override public boolean pixelPerfect() { return getPreferences(MODE_PRIVATE).getBoolean("pixel_perfect", false); }
+    @Override public void togglePixelPerfect() { getPreferences(MODE_PRIVATE).edit().putBoolean("pixel_perfect", !pixelPerfect()).apply(); if (top != null) top.postInvalidate(); }
     @Override public boolean hardcore() { return getPreferences(MODE_PRIVATE).getBoolean("ra_hardcore", false); }
     @Override public String romName() { String r = getPreferences(MODE_PRIVATE).getString("rom", ""); return r.substring(r.lastIndexOf('/') + 1); }
     @Override public String saveDir() { String d = getPreferences(MODE_PRIVATE).getString("save_dir", null); return d == null ? "Next to ROM" : d.replace(Environment.getExternalStorageDirectory().getPath() + "/", ""); }
@@ -418,7 +541,7 @@ public final class MainActivity extends Activity implements Bottom.Host {
 
     @Override protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
-        if (res != RESULT_OK || data == null || data.getData() == null) return;
+        if (res != RESULT_OK || data == null || data.getData() == null) { if (game == null) pickRom(); return; } // first run: back to the list
         String rom = getPreferences(MODE_PRIVATE).getString("rom", "");
         File sav = new File(savePath(rom));
         if (req == PICK_PATCH) {
@@ -445,8 +568,9 @@ public final class MainActivity extends Activity implements Bottom.Host {
                 } catch (Exception e) { toast("Couldn't unzip: " + e.getMessage()); return; }
                 path = out.getPath();
             }
-            if (supportedTitle(new File(path)) == null) { toast("Not a supported game"); return; }
+            if (supportedTitle(new File(path)) == null) { toast("Not a supported game"); if (game == null) pickRom(); return; }
             java.util.LinkedHashSet<String> set = romFiles(); set.add(path); saveRomFiles(set);
+            if (game == null) useRom(path);
             return;
         }
         try {
@@ -517,8 +641,8 @@ public final class MainActivity extends Activity implements Bottom.Host {
 
     /** Before each day's first boot: copy the save to the app's save-backups folder, keeping the newest 3 days. */
     private void dailyBackup(File sav) {
-        File dir = getExternalFilesDir("save-backups");
-        if (dir == null || !sav.exists()) return;
+        File dir = appDir("save-backups");
+        if (!sav.exists()) return;
         String day = new java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(new java.util.Date());
         File out = new File(dir, sav.getName() + "." + day);
         if (out.exists()) return;
@@ -542,7 +666,11 @@ public final class MainActivity extends Activity implements Bottom.Host {
         running = false;
         if (emu != null) try { emu.join(); } catch (InterruptedException ignored) {}
     }
-    private void toast(String msg) { android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show(); }
+    /** Messages look like the game's once the bottom screen is up; before that (first run) Android's own toast. */
+    private void toast(String msg) {
+        if (bottomView != null) Ra.toasts.add(new Ra.Toast(msg, "", 2500));
+        else android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show();
+    }
 
     @Override public void raLogin() { raLoginDialog(null); }
 
@@ -588,6 +716,8 @@ public final class MainActivity extends Activity implements Bottom.Host {
                 .setAudioFormat(new AudioFormat.Builder().setSampleRate(sampleRate).setChannelMask(AudioFormat.CHANNEL_OUT_STEREO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
                 .setBufferSizeInBytes(Math.max(buf, 4096 * 4)).setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY).build();
         audio.play();
+        game.volume = getPreferences(MODE_PRIVATE).getInt("volume", 100);
+        int appliedVolume = -1;
         short[] samples = new short[16384];
         int frame = 0;
         long t0 = System.nanoTime(), emuNs = 0;
@@ -606,6 +736,7 @@ public final class MainActivity extends Activity implements Bottom.Host {
                 android.util.Log.i("gbads", String.format("fps %.1f, emu %.1f ms/frame, audio %d frames", 300e9 / (now - t0), emuNs / 300e6, n));
                 t0 = now; emuNs = 0;
             }
+            if (game.volume != appliedVolume) { appliedVolume = game.volume; audio.setVolume(appliedVolume / 100f); getPreferences(MODE_PRIVATE).edit().putInt("volume", appliedVolume).apply(); }
             Ra.doFrame();
             if (Ra.resetRequested) { Ra.resetRequested = false; Core.reset(); }
             game.poll(frame++, keys | stickKeys);

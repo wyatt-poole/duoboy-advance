@@ -1,3 +1,24 @@
+# DuoBoy Advance 0.2.0
+
+**Setup**
+- First run: supported games are listed first and marked; `.zip` ROMs are unpacked for you; "Browse…" and "Rescan" if nothing is found. Picking a file that isn't Unbound now explains why instead of crashing on every launch.
+- If a save for the game already exists (next to the ROM, or in RetroArch's `saves/mGBA`), DuoBoy offers to use it on the first boot.
+- Save states and daily backups now live in `DuoBoy Advance/` on shared storage, so they survive an uninstall. Existing ones are moved over automatically.
+- Settings → Top screen: **Fill** (default) or **Pixel-perfect** (whole-number scaling, small black borders).
+- Settings messages use the game-style popup on the bottom screen.
+
+**Pause menu (Start + Select)**
+- **Screenshot**: both screens as one picture, 4×, into `Pictures/DuoBoy Advance`.
+- **Load state** asks once more; hold it to pick any slot (with dates).
+
+**Battles**
+- Partner battles name the Pokémon that's choosing in the top text box; no flash of the game's menu on Run / Quick Run or the Last Ball button.
+- Tapping advances the level-up stats box like other text.
+
+**Overworld**
+- Signs and other text you can walk away from are no longer treated as cutscenes: no dimming, no tap-for-A.
+- Stronger dimming during real cutscenes and while the game is busy.
+
 # DuoBoy Advance 0.1.3
 
 - New app icon (also used for home-screen shortcuts).
