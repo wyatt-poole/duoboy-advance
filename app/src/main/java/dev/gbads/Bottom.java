@@ -264,6 +264,7 @@ final class Bottom extends View {
         toggleButton(pressed == 50);
 
         // bottom bar: Unbound's purple strip with the menu icons (colour; grey while touched — the reverse of the game's cursor)
+        rect(0, BAR_Y - 2, W, 4, skin.bar.getPixel(8, 150)); // the bar's purple up to its white line: nothing shows through above it
         strip(120, 40, BAR_Y + 2);
         for (int i = 0; i < BUTTON_ENTRY.length; i++)
             c.drawBitmap(entryIcon(BUTTON_ENTRY[i], pressed != i && s.menuOn[BUTTON_ENTRY[i]]), buttonX(i), ICON_Y + (pressed == i ? 1 : 0), null); // grey = not unlocked yet
@@ -348,7 +349,7 @@ final class Bottom extends View {
         areaChips.clear();
         String place = s.mapSec >= 0 ? rom.mapName(s.mapSec) : "";
         if (rows.isEmpty()) { window(8, AREA_TOP + 20, 232, 30); text("No wild Pokémon here.", 20, AREA_TOP + 27); areaHeader(place); return; }
-        c.save(); c.clipRect(0, AREA_TOP, W, BAR_Y);
+        c.save(); c.clipRect(0, AREA_TOP, W, BAR_Y - 2);
         for (int[] r : rows) {
             if (r[0] * 16 + r[5] != kind) { // section label: method, and when it's time-limited the times (with "now")
                 if (x != 8) { y += 36; x = 8; }
@@ -362,7 +363,7 @@ final class Bottom extends View {
             int nat = rom.nationalDex(r[1]);
             boolean seen = Game.dexFlag(s.dexSeen, nat), caught = Game.dexFlag(s.dexCaught, nat);
             window(x, y + (pressed == 201 + areaChips.size() ? 1 : 0), 56, 34);
-            c.save(); c.clipRect(x + 3, Math.max(AREA_TOP, y + 3), x + 53, Math.min(BAR_Y, y + 31));
+            c.save(); c.clipRect(x + 3, Math.max(AREA_TOP, y + 3), x + 53, Math.min(BAR_Y - 2, y + 31));
             Bitmap ic = animIcon(r[1], 1, 1);
             c.drawBitmap(seen ? ic : silhouette(ic, skin.tb[9]), x - 2, y - 2, null); // unseen: a silhouette (no spoilers)
             if (caught) c.drawBitmap(skin.partyBalls[Skin.BALL_OK], x + 4, y + 22, null);
@@ -385,9 +386,8 @@ final class Bottom extends View {
     private void areaHeader(String place) {
         window(0, TOP_H - 2, W, 26);
         text(place.isEmpty() ? "Area" : place, 10, TOP_H + 3);
-        window(0, AREA_BOTTOM, W, BAR_Y - AREA_BOTTOM); // matching band at the bottom: the list slides under both
     }
-    private static final int AREA_BOTTOM = BAR_Y - 16;
+    private static final int AREA_BOTTOM = BAR_Y - 2; // the bar is the bottom edge
     /** Period mask (morning 1, day 2, evening 4, night 8) -> the DexNav-style wording. */
     private static String timeName(int m) {
         switch (m) {

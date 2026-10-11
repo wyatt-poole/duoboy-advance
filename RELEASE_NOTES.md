@@ -1,3 +1,9 @@
+# DuoBoy Advance 0.2.3
+
+- DexNav view: the list scrolls cleanly down to the bar (no fixed strip or stray text at the edge); no extra band at the bottom.
+- Docs: every battle type uses the bottom screen (Safari labels are ready for vanilla FireRed later; Unbound has no Safari battles).
+- README: icon and screenshots.
+
 # DuoBoy Advance 0.2.2
 
 - **All Yes/No prompts** — dialogue, the save prompt, overworld move-learning — now show as buttons on the bottom screen with the game's box hidden (battle prompts already did).
