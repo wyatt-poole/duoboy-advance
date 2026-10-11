@@ -1,3 +1,8 @@
+# DuoBoy Advance 0.2.2
+
+- **All Yes/No prompts** — dialogue, the save prompt, overworld move-learning — now show as buttons on the bottom screen with the game's box hidden (battle prompts already did).
+- **Install Unbound…** (Settings → ROMs): downloads the official patch, patches a FireRed (USA) v1.0 ROM found on the device and adds the game; the download is deleted afterwards. The patch is hosted with the author's permission.
+
 # DuoBoy Advance 0.2.1
 
 - **Every battle type** gets the bottom screen (tag battles with a partner, Frontier-style, Unbound's extra kinds). Safari battles show Ball / Bait / Rock / Run.

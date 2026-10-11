@@ -627,19 +627,24 @@ final class Game {
     /** Cursor of an open Yes/No menu outside the battle scripts (0 Yes, 1 No), else -1. */
     volatile int owYesNo = -1;
     private boolean owYesNoHidden;
+    private int owYesNoKey = -1;
     private volatile int owYesNoAnswer = -1;
     void answerOwYesNo(int choice) { owYesNoAnswer = choice; }
     private void pollOwYesNo() {
         int id = Core.read8(YESNO_WINDOW_ID);
-        boolean open = BuildConfig.EXPERIMENTAL && id < 32 && Core.read8(GWINDOWS + id * 12) != 0xFF && Core.read8(SMENU + 5) == id // dev only until it's verified
-                && Core.read8(SMENU + 3) == 0 && Core.read8(SMENU + 4) == 1; // that window, a 2-option menu
-        if (!open) { owYesNo = -1; owYesNoHidden = false; owYesNoAnswer = -1; return; }
-        if (!owYesNoHidden && pendingCall == null && callDone == null) { // its box isn't needed up top: the buttons are down here
+        int w = GWINDOWS + id * 12; // {bg, left, top, width, height, palette, baseBlock u16, tileData*}
+        boolean open = id < 32 && Core.read8(w) != 0xFF && Core.read8(w + 3) == 6 && Core.read8(w + 4) == 4 // the Yes/No box template (6x4 tiles)
+                && Core.read8(SMENU + 5) == id && Core.read8(SMENU + 3) == 0 && Core.read8(SMENU + 4) == 1; // and sMenu is a 2-option menu on it
+        int key = open ? id << 16 | Core.read8(w + 6) | Core.read8(w + 7) << 8 : -1; // a new box (id or tile block) gets cleared again
+        if (key != owYesNoKey) { owYesNoKey = key; owYesNoHidden = false; owYesNoAnswer = -1; }
+        if (!open) { owYesNo = -1; return; }
+        if ((!owYesNoHidden || frame % 8 == 0) && pendingCall == null && callDone == null) { // its box isn't needed up top; re-clear: the text printer re-copies the window
             owYesNoHidden = true;
-            callGame(CLEAR_STD_WINDOW, id, 1, 0, 0, null); // ClearStdWindowAndFrameToTransparent(windowId, copyToVram)
+            android.util.Log.i("gbads", "yes/no window " + id + " bg " + Core.read8(GWINDOWS + id * 12) + " cursor " + Core.read8(MENU_CURSOR) + " target " + target + " session " + touchSession);
+            callGame(CLEAR_STD_WINDOW, id, 1, 0, 0, r -> android.util.Log.i("gbads", "yes/no box cleared")); // ClearStdWindowAndFrameToTransparent(windowId, copyToVram)
         }
         int a = owYesNoAnswer;
-        if (a >= 0) { owYesNoAnswer = -1; Core.write8(MENU_CURSOR, a); tapA(); }
+        if (a >= 0) { owYesNoAnswer = -1; Core.write8(MENU_CURSOR, a); tapA(); android.util.Log.i("gbads", "yes/no answered " + a); }
         owYesNo = Core.read8(MENU_CURSOR) & 1;
     }
     // ---- tap anywhere to continue: dialogue waiting for A (text prompt arrow, or a script's waitbuttonpress) ----

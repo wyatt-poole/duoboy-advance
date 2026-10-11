@@ -28,7 +28,7 @@ final class Bottom extends View {
         java.util.List<String[]> roms(); String romDir(); void pickRomDir(); void clearRomDir(); void addRom(); void removeRom(String path);
         String currentRom(); void playRom(String path); void addShortcut(); void patchRom();
         java.util.List<String[]> stateSlots();
-        void openUrl(String url); // {slot, "MM/dd HH:mm"} for each save state file
+        void openUrl(String url); void installUnbound(); // {slot, "MM/dd HH:mm"} for each save state file
     }
 
     private final Host host;
@@ -1722,6 +1722,7 @@ final class Bottom extends View {
             }
             rows.add(new String[]{"Add ROM…", "", "a"});
             rows.add(new String[]{"Patch a ROM…", "IPS UPS BPS", "h"});
+            rows.add(new String[]{"Install Unbound…", "patch your FireRed", "i"});
             rows.add(new String[]{"Get Unbound patch", "official page", "u"});
             rows.add(new String[]{"Home shortcut", "this game", "s"});
             return rows.toArray(new String[0][]);
@@ -1790,6 +1791,7 @@ final class Bottom extends View {
             case 'a': host.addRom(); return;
             case 's': host.addShortcut(); return;
             case 'h': host.patchRom(); return;
+            case 'i': host.installUnbound(); return;
             case 'u': host.openUrl("https://www.pokecommunity.com/threads/pok%C3%A9mon-unbound-completed.382178/"); return;
             case 'x': return; // About page: information only
         }

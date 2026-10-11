@@ -52,6 +52,44 @@ public final class MainActivity extends Activity implements Bottom.Host {
         return new File(appDir("states"), new File(rom).getName().replaceAll("[.]gba$", "") + ".ss" + slot);
     }
     void requestState(String op, int slot) { stateSlot = slot; stateOp = op; }
+    /** One tap: download the official Unbound patch (hosted with the author's permission), patch a FireRed v1.0 found on the device, delete the download. */
+    static final String UNBOUND_PATCH_URL = "https://github.com/wyatt-poole/duoboy-advance/releases/download/v0.2.1/Pokemon-Unbound-2.1.1.1-patch.zip";
+    @Override public void installUnbound() {
+        ArrayList<File> all = new ArrayList<>(), bases = new ArrayList<>();
+        scan(Environment.getExternalStorageDirectory(), 4, all);
+        for (File f : all) if (f.getName().toLowerCase().contains("fire") && supportedTitle(f) == null) bases.add(f); // FireRed candidates, not already Unbound
+        if (bases.isEmpty()) { toast("Put your Pokémon FireRed (USA) v1.0 ROM (.gba or .zip) on the device first"); return; }
+        toast("Downloading the Unbound patch (17 MB)…");
+        new Thread(() -> {
+            File tmp = new File(getCacheDir(), "unbound-patch.zip");
+            String msg;
+            try {
+                java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(UNBOUND_PATCH_URL).openConnection();
+                c.setInstanceFollowRedirects(true);
+                try (java.io.InputStream in = c.getInputStream(); java.io.OutputStream o = new java.io.FileOutputStream(tmp)) { copy(in, o); }
+                byte[] ups = null;
+                try (java.util.zip.ZipInputStream z = new java.util.zip.ZipInputStream(new java.io.FileInputStream(tmp))) {
+                    for (java.util.zip.ZipEntry e; (e = z.getNextEntry()) != null; ) if (e.getName().toLowerCase().endsWith(".ups")) { ups = Patcher.readAll(z); break; }
+                }
+                if (ups == null) throw new java.io.IOException("no .ups in the download");
+                File made = null; String why = "";
+                for (File base : bases) { // the patch checks the base ROM's CRC, so a wrong file is simply skipped
+                    try (java.io.InputStream in = new java.io.FileInputStream(base)) {
+                        byte[] out = Patcher.apply(ups, Patcher.readRom(in, base.getName().toLowerCase().endsWith(".zip")));
+                        made = new File(base.getParentFile(), "Pokemon Unbound.gba");
+                        try (java.io.FileOutputStream fo = new java.io.FileOutputStream(made)) { fo.write(out); }
+                        break;
+                    } catch (Exception e) { why = e.getMessage(); }
+                }
+                if (made == null) throw new java.io.IOException("none of " + bases.size() + " FireRed file(s) is a clean (USA) v1.0 ROM: " + why);
+                java.util.LinkedHashSet<String> set = romFiles(); set.add(made.getPath()); saveRomFiles(set);
+                msg = "Pokémon Unbound is ready: " + made.getName() + "\n\nOpen Settings > ROMs to play it.";
+            } catch (Exception e) { msg = "Couldn't install Unbound: " + e.getMessage(); }
+            tmp.delete(); // the download isn't kept
+            String m = msg;
+            runOnUiThread(() -> new AlertDialog.Builder(this).setMessage(m).setPositiveButton("OK", null).show());
+        }).start();
+    }
     @Override public void openUrl(String url) {
         try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))); } catch (Exception e) { toast("No browser found"); }
     }
