@@ -11,6 +11,7 @@ A dual-screen Game Boy Advance experience for Android handhelds like the **AYN T
 <p align="center">
   <img src="docs/images/battle.png" width="180" alt="Battle: top screen keeps the fight, bottom has the actions">
   <img src="docs/images/fight-menu.png" width="180" alt="Fight menu with type, power, accuracy and PP">
+  <img src="docs/images/bag.png" width="180" alt="Battle bag: party on the left, pockets and items on the right">
   <img src="docs/images/party.png" width="180" alt="Overworld party">
   <img src="docs/images/town-map.png" width="180" alt="Region map with your position">
   <img src="docs/images/dexnav.png" width="180" alt="DexNav-style area view (once unlocked in the game)">
