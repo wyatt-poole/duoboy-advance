@@ -16,5 +16,15 @@ Rough order, not promises. Ideas and help are welcome; see [CONTRIBUTING.md](CON
 - More battle types (partner and multi battles, Battle Frontier facilities, Safari)
 - Built-in list of ROM-hack patches to download (patches only; you always bring your own base ROM)
 
+## Emulator features
+- **PKForge integration**: hand Pokémon to / from the PKForge app (export and import of party / box data)
+- **Trading between games** built in: move Pokémon between save files on the same device (e.g. two Unbound saves, or between supported games later)
+- **Link play** (link-cable emulation over Wi-Fi) — the bottom screen is already ready for link battles
+- **Display**: CRT / LCD filters and shaders, colour correction, integer scaling options (pixel-perfect is in)
+- **Cheats**: GameShark / CodeBreaker codes with a manager on the bottom screen (RetroAchievements pauses while cheats are on)
+- **Hotkeys**: remappable buttons and shortcuts (fast forward, save / load state, screenshot, menu)
+- **Audio**: per-channel volume, low-pass filter
+- **Rewind** and turbo settings
+
 ## Known gaps
 See the "Not tested yet" section of [RELEASE_NOTES.md](RELEASE_NOTES.md).
