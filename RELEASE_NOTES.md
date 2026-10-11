@@ -1,3 +1,13 @@
+# DuoBoy Advance 0.2.1
+
+- **Every battle type** gets the bottom screen (tag battles with a partner, Frontier-style, Unbound's extra kinds). Safari battles show Ball / Bait / Rock / Run.
+- **Battle Yes/No prompts** — including "Delete a move for…?" and "Stop learning…?" on level-up — now show as buttons, with the game's box hidden and the question in our text box.
+- **DexNav view:** Pokémon are grouped by when they appear (all day first, then "Night only (now)" and so on); scrolling slides under the header and footer bands.
+- **Take held item** asks Yes / No first.
+- **Pokédex page after a catch** advances on tap; Run / Quick Run no longer flash the game's menu.
+- **Pause menu:** Fast forward On/Off row.
+- **ROMs:** "Get Unbound patch" opens the official page; after patching, offers to delete the patch file.
+
 # DuoBoy Advance 0.2.0
 
 **Setup**

@@ -109,11 +109,18 @@ final class Game {
     Game(Rom rom) { this.rom = rom; safeMode = !rom.testedBuild(); }
     /** An Unbound build we haven't tested, or a hook threw: battles keep the game's own menus, the party can't be edited. */
     volatile boolean safeMode;
-    // Battle types we've played through: double, "is master", trainer, roamer, legendaries, scripted wild, partner. Anything else
-    // (link, multi, Safari, Battle Tower, tutorials, ghost, e-Reader, Unbound's own extras) keeps the game's menus.
-    // 0x400000: Unbound's in-game partner battles (a double where the partner's Pokémon is AI-controlled)
-    private static final int SUPPORTED_BATTLES = 0x1 | 0x4 | 0x8 | 0x400 | 0x1000 | 0x2000 | 0x4000 | 0x20000 | 0x40000 | 0x400000;
-    private boolean battleSupported() { return !safeMode && (Core.read32(0x02022B4C) & ~SUPPORTED_BATTLES) == 0; }
+    // Battle types that need the game's own menus: link / multiplayer (different flow), Safari (Ball / Bait / Rock / Run menu),
+    // the tutorial (scripted inputs), recorded battles. Everything else (wild, trainer, partner, legendary, Frontier-style,
+    // Unbound's extra flags) gets the bottom screen; the controller-function checks and safe mode still catch surprises.
+    // Only where the player's input isn't the player's: the scripted catching tutorial (0x200) and recorded-battle playback (0x1000000).
+    // Link / multi use the same menus (and need link emulation we don't have yet); Safari gets Ball / Bait / Rock / Run labels.
+    private static final int UNSUPPORTED_BATTLES = 0; // every battle type; our hooks only engage on the handlers they recognise
+    private int lastFlags = -1;
+    private boolean battleSupported() {
+        int f = Core.read32(0x02022B4C);
+        if (f != lastFlags) { lastFlags = f; android.util.Log.i("gbads", "battle type flags " + Integer.toHexString(f)); }
+        return !safeMode && (f & UNSUPPORTED_BATTLES) == 0;
+    }
 
     /** Called once per frame on the emu thread. */
     private int lastCb2, lastFcb2, lastSmCb, lastStep = -1, lastCtrl;
@@ -160,6 +167,7 @@ final class Game {
         int swapCursor = -1;
         /** A battle-script Yes/No is waiting for input (yesnobox, nickname, learn-move prompts): its cursor, else -1. */
         int yesNo = -1;
+        String yesNoText;
         /** A move animation is playing: its attacker and target (gBattleAnimAttacker / gBattleAnimTarget), else -1. */
         int animAttacker = -1, animTarget = -1;
         /**
@@ -207,6 +215,7 @@ final class Game {
         int actionCursor, moveCursor;
         /** Bottom-screen-only cursor row under the moves: 0 = none, 1 = Back, 2 = Mega. */
         int extraSel;
+        boolean safari; // Safari Zone: the same four cursor spots mean Ball / Bait / Rock / Run
         boolean wild; // CFRU's Last Ball trigger only works outside trainer battles
         /** gBattle_BG0_X/Y off the message-box layout = the game is showing its action/move menu up top. */
         boolean menuOnTop, inBattleScreen;
@@ -243,7 +252,7 @@ final class Game {
     }
 
     private void pollBattle() {
-        if (!inBattle()) { battle = null; java.util.Arrays.fill(lastTarget, -1); chooseBattler = -1; bagBattler = -1; return; }
+        if (!inBattle()) { if (bg0Hidden) { Core.layer(0, true); bg0Hidden = false; } battle = null; java.util.Arrays.fill(lastTarget, -1); chooseBattler = -1; bagBattler = -1; return; }
         Battle b = new Battle();
         b.passive = !battleSupported(); // unfamiliar battle type: hands off for the whole battle
         byte[] funcs = new byte[16];
@@ -316,7 +325,8 @@ final class Game {
         b.extraSel = extraSel;
         if (chimeRestore >= 0 && b.mode == Battle.MOVES) b.moveCursor = chimeRestore; // the nudge is undone next frame
         if (targetGoal >= 0 && b.mode == Battle.TARGET) b.target = targetGoal;         // don't show the walk's stepping stone
-        b.wild = (Core.read32(0x02022B4C) & 0x08) == 0; // gBattleTypeFlags & BATTLE_TYPE_TRAINER
+        b.wild = (Core.read32(0x02022B4C) & 0x08) == 0;
+        b.safari = (Core.read32(0x02022B4C) & 0x80) != 0; // gBattleTypeFlags & BATTLE_TYPE_TRAINER
         scanBattleSprites(b);
         if (!b.quickBall && b.mode == Battle.ACTION) b.fallbackBall = fallbackBall(b.battler);
         b.inBattleScreen = Core.read32(MAIN + 4) == 0x08011101; // BattleMainCB2 (not the bag / party screens)
@@ -354,16 +364,19 @@ final class Game {
         int instr = Core.read32(0x02023D74); // gBattlescriptCurrInstr; gBattleCommunication 0x02023E82: [0] state, [1] cursor
         if (instr >>> 25 == 4 || instr >>> 24 == 2) {
             int op = Core.read8(instr);
-            if (b.inBattleScreen && battleSupported() && (op == 0x5A || op == 0x5B || op == 0x67 || op == 0xF3) && Core.read8(0x02023E82) == 0) {
-                // about to draw its Yes/No box: do its setup without the drawing (the bottom screen has the buttons)
-                Core.write8(0x02023E82, 1); Core.write8(0x02023E83, 0);
+            // yesnobox, learn-move, stop-learning, nickname: all wait on gBattleCommunication[CURSOR_POSITION] (their state vars differ)
+            if (b.inBattleScreen && battleSupported() && (op == 0x5A || op == 0x5B || op == 0x67 || op == 0xF3)) {
+                b.yesNo = Core.read8(0x02023E83) & 1;
+                Core.read(0x02022E2C, questionBuf); b.yesNoText = plainText(questionBuf); // the question, for our own text box
             }
-            if (b.inBattleScreen && battleSupported() && (op == 0x5A || op == 0x5B || op == 0x67 || op == 0xF3) && Core.read8(0x02023E82) == 1) b.yesNo = Core.read8(0x02023E83);
         }
-        if (topHold > 0) { // until the battle's own text starts (then its message is what should show)
-            boolean printing = false;
-            for (int i = 0; i < 32; i++) if (printers[i * 0x24 + 0x1B] != 0) printing = true;
-            topHold = printing ? 0 : topHold - 1;
+        // While a prompt is up the game's text layer (BG0: text box + Yes/No box) is hidden; our overlay shows the question instead
+        boolean hideBg0 = b.yesNo >= 0;
+        if (hideBg0 != bg0Hidden) { Core.layer(0, !hideBg0); bg0Hidden = hideBg0; }
+        if (topHold > 0) { // until the battle's displayed string changes (gDisplayedStringBattle): then its message is what should show
+            Core.read(0x02022E2C, dispStr);
+            if (topHold == TOP_HOLD) System.arraycopy(dispStr, 0, dispStr0, 0, dispStr.length);
+            topHold = java.util.Arrays.equals(dispStr, dispStr0) ? topHold - 1 : 0;
             b.topHold = topHold > 0;
         }
         battle = b;
@@ -473,7 +486,7 @@ final class Game {
     // Touch thread -> emu thread: one pending request, applied at the next poll.
     private volatile int pendingCursorAddr, pendingCursor, pendingKey;
     void battleAction(int action) {
-        if (action == B_ACTION_RUN) topHold = 45; // fleeing: no flash of the game's menu before "Got away safely!"
+        if (action == B_ACTION_RUN) topHold = TOP_HOLD; // fleeing: no flash of the game's menu before "Got away safely!"
         pendingCursorAddr = ACTION_CURSOR; pendingCursor = action; pendingKey = Core.A;
     }
     void battleMove(int slot) { pendingCursorAddr = MOVE_CURSOR; pendingCursor = slot; pendingKey = Core.A; }
@@ -609,6 +622,26 @@ final class Game {
         }
     }
     private volatile int pendingYesNo = -1, pendingYesNoCursor = -1;
+    // FireRed's general Yes/No menu (CreateYesNoMenu): sYesNoWindowId, gWindows[] (12 bytes each, bg 0xFF = freed), sMenu
+    static final int YESNO_WINDOW_ID = 0x0203ADF3, GWINDOWS = 0x020204B4, SMENU = 0x0203ADE4, CLEAR_STD_WINDOW = 0x0810F4D9;
+    /** Cursor of an open Yes/No menu outside the battle scripts (0 Yes, 1 No), else -1. */
+    volatile int owYesNo = -1;
+    private boolean owYesNoHidden;
+    private volatile int owYesNoAnswer = -1;
+    void answerOwYesNo(int choice) { owYesNoAnswer = choice; }
+    private void pollOwYesNo() {
+        int id = Core.read8(YESNO_WINDOW_ID);
+        boolean open = BuildConfig.EXPERIMENTAL && id < 32 && Core.read8(GWINDOWS + id * 12) != 0xFF && Core.read8(SMENU + 5) == id // dev only until it's verified
+                && Core.read8(SMENU + 3) == 0 && Core.read8(SMENU + 4) == 1; // that window, a 2-option menu
+        if (!open) { owYesNo = -1; owYesNoHidden = false; owYesNoAnswer = -1; return; }
+        if (!owYesNoHidden && pendingCall == null && callDone == null) { // its box isn't needed up top: the buttons are down here
+            owYesNoHidden = true;
+            callGame(CLEAR_STD_WINDOW, id, 1, 0, 0, null); // ClearStdWindowAndFrameToTransparent(windowId, copyToVram)
+        }
+        int a = owYesNoAnswer;
+        if (a >= 0) { owYesNoAnswer = -1; Core.write8(MENU_CURSOR, a); tapA(); }
+        owYesNo = Core.read8(MENU_CURSOR) & 1;
+    }
     // ---- tap anywhere to continue: dialogue waiting for A (text prompt arrow, or a script's waitbuttonpress) ----
     volatile boolean awaitingA;
     private volatile int tapA;
@@ -841,8 +874,12 @@ final class Game {
         }
     }
     private int topHold;
+    private static final int TOP_HOLD = 90; // frames at most
+    private final byte[] questionBuf = new byte[160];
+    private boolean bg0Hidden;
+    private final byte[] dispStr = new byte[48], dispStr0 = new byte[48];
     private void bagFinish(int item) {
-        topHold = 45;
+        topHold = TOP_HOLD;
         Core.write8(SPECIAL_VAR_ITEM_ID, item & 0xFF); Core.write8(SPECIAL_VAR_ITEM_ID + 1, item >> 8);
         Core.write32(CONTROLLER_FUNCS + bagBattler * 4, COMPLETE_WHEN_CHOSE_ITEM);
         bagBattler = -1; bagTargeting = false;
@@ -1139,7 +1176,7 @@ final class Game {
     void battleQuickBall() {
         Battle b = battle;
         if (b != null && !b.quickBall && b.fallbackBall != 0) { autoBall = b.fallbackBall; battleAction(B_ACTION_BAG); return; } // through our bag
-        topHold = 45; // the game's own Last Ball: keep its action menu covered until the throw text starts
+        topHold = TOP_HOLD; // the game's own Last Ball: keep its action menu covered until the throw text starts
         pendingCursorAddr = 0; pendingKey = Core.L;
     }
     private volatile int autoBall, lastBallUsed;
@@ -1207,6 +1244,10 @@ final class Game {
         if ((keys & (Core.START | Core.SELECT)) == (Core.START | Core.SELECT) && (pressedNow & (Core.START | Core.SELECT)) != 0) {
             resetPrompt = true; menuCursor = 0; confirmRow = -1; slotPicker = false; return 0;
         }
+        if (owYesNo >= 0) {
+            if ((pressedNow & (Core.UP | Core.DOWN)) != 0) { Core.write8(MENU_CURSOR, (pressedNow & Core.UP) != 0 ? 0 : 1); chime(); }
+            return keys & ~(Core.UP | Core.DOWN);
+        }
         if (pressedNow != 0 && dismissMessage()) return 0; // like the game's text boxes: the first press only clears the message
         if (b == null || safeMode || b.passive) return keys;
         if (chooseBattler >= 0 && !chooseSummaryOpen) return chooseKeys(keys, pressedNow); // the summary takes its own keys
@@ -1219,7 +1260,7 @@ final class Game {
             return keys & ~(Core.UP | Core.DOWN);
         }
         if (b.mode != Battle.ACTION) return keys;
-        if ((pressedNow & Core.R) != 0 && b.quickRunWithR) topHold = 45; // Quick Run: no flash of the game's menu
+        if ((pressedNow & Core.R) != 0 && b.quickRunWithR) topHold = TOP_HOLD; // Quick Run: no flash of the game's menu
         if ((pressedNow & Core.L) != 0 && (b.quickBall || b.fallbackBall != 0)) { battleQuickBall(); return keys & ~Core.L; } // one path for L and taps
         int dpad = Core.UP | Core.DOWN | Core.LEFT | Core.RIGHT;
         if ((pressedNow & dpad) != 0) {
@@ -1254,8 +1295,10 @@ final class Game {
     private volatile int resetAnswer; // set by touch: 1 yes, 2 no
     void answerReset(boolean yes) { resetAnswer = yes ? 1 : 2; }
     /** Start+Select menu: 0 Save state, 1 Load state (asks once more; hold for any slot), 2 Screenshot, 3 Reset game (asks), 4 Cancel. */
-    static final String[] MENU_ROWS = {"Save state", "Load state", "Screenshot", "Volume", "Reset game", "Cancel"};
-    static final int ROW_VOLUME = 3, ROW_RESET = 4;
+    static final String[] MENU_ROWS = {"Save state", "Load state", "Screenshot", "Volume", "Fast forward", "Reset game", "Cancel"};
+    static final int ROW_VOLUME = 3, ROW_FF = 4, ROW_RESET = 5;
+    /** Fast forward latched from the menu (R2 held still works too). */
+    volatile boolean ffLatched;
     /** 0..100, applied to the audio track by MainActivity. */
     volatile int volume = 100;
     void adjustVolume(int delta) { volume = Math.max(0, Math.min(100, volume + delta)); chime(); }
@@ -1286,6 +1329,7 @@ final class Game {
         else if (row == 1) { if (confirmRow == 1) { stateLoadSlot = 0; stateRequest = 2; resetAnswer = 2; } else confirmRow = 1; }
         else if (row == 2) { screenshotReq = 4; resetAnswer = 2; }
         else if (row == ROW_VOLUME) return; // adjusted with left / right or the row's halves
+        else if (row == ROW_FF) { ffLatched = !ffLatched; resetAnswer = 2; }
         else if (row == ROW_RESET) { if (confirmRow == ROW_RESET) resetAnswer = 1; else confirmRow = ROW_RESET; }
         else resetAnswer = 2;
     }
@@ -1424,13 +1468,15 @@ final class Game {
         }
         if (battleKeyTimer > 0) held = --battleKeyTimer >= 2 ? battleKey : 0;
         applyResetAnswer();
+        pollOwYesNo();
         if (pendingYesNoCursor >= 0) { if (battle != null && battle.yesNo >= 0) Core.write8(0x02023E83, pendingYesNoCursor); pendingYesNoCursor = -1; }
         if (tapA > 0) tapA--;
         // sMsgIsSignpost (0x03000FA1): sign text you can walk away from isn't a cutscene: no dim, no tap-for-A
         awaitingA = (inBattle() || inOverworld() && Core.read8(0x03000F9C) != 0 && Core.read8(0x03000FA1) == 0) && textWaiting();
         if (!awaitingA && inBattle()) { // the level-up stats box (drawlvlupbox, 0x6C) waits for A too
             int ins = Core.read32(0x02023D74);
-            awaitingA = (ins >>> 25 == 4 || ins >>> 24 == 2) && Core.read8(ins) == 0x6C;
+            int op = (ins >>> 25 == 4 || ins >>> 24 == 2) ? Core.read8(ins) : -1;
+            awaitingA = op == 0x6C || op == 0xF2; // level-up box, caught Pokémon's dex page
         }
         if (pendingYesNo >= 0) { // the handler reads gBattleCommunication[CURSOR_POSITION] when A arrives
             Battle bt = battle;

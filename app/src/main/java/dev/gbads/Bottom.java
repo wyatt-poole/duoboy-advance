@@ -27,7 +27,8 @@ final class Bottom extends View {
         void raLogin(); void raLogout(); void toggleHardcore(); void pickRom(); void pickSaveDir(); void importSave(); void exportSave(); String saveType(); void toggleSaveType();
         java.util.List<String[]> roms(); String romDir(); void pickRomDir(); void clearRomDir(); void addRom(); void removeRom(String path);
         String currentRom(); void playRom(String path); void addShortcut(); void patchRom();
-        java.util.List<String[]> stateSlots(); // {slot, "MM/dd HH:mm"} for each save state file
+        java.util.List<String[]> stateSlots();
+        void openUrl(String url); // {slot, "MM/dd HH:mm"} for each save state file
     }
 
     private final Host host;
@@ -215,6 +216,11 @@ final class Bottom extends View {
         else if (battle == null && game.inGame && game.state.fieldBusy) { // start menu: party greyed; cutscene / script: everything
             fill.setColor(0x78000000); c.drawRect(0, game.state.startMenuOpen ? TOP_H : 0, W, game.state.startMenuOpen ? BAR_Y : H, fill);
         }
+        if (game.owYesNo >= 0 && battle == null && !game.resetPrompt) { // the game's Yes/No, as buttons (its box is cleared up top)
+            fill.setColor(0x78000000); c.drawRect(0, 0, W, H, fill);
+            yesNoButton(234, YES_Y, "Yes", game.owYesNo == 0);
+            yesNoButton(235, YES_Y + 52, "No", game.owYesNo == 1);
+        }
         if (game.resetPrompt) drawResetPrompt();
         drawToast();
 
@@ -286,7 +292,6 @@ final class Bottom extends View {
             if (rom.u8(e) == group && rom.u8(e + 1) == num) return e;
         return 0;
     }
-    private static final String[] PERIODS = {"", "Morning", "Day", "Evening", "Night"};
     private static final int[] PERIOD_ICONS = {0, 100, 93, 99, 94}; // Dawn, Sun, Dusk, Moon Stone
     private static final int[] PERIOD_TABLES = {0, 0x08A7DC18, 0, 0x08A7DC04, 0x08A7DA74}; // Unbound's time-of-day headers
     private static int periodOf(int h) { return h < 5 || h >= 20 ? 4 : h <= 7 ? 1 : h >= 17 ? 3 : 2; }
@@ -306,11 +311,6 @@ final class Bottom extends View {
         }
         return new java.util.ArrayList<>(bySpecies.values());
     }
-    private static boolean sameSpecies(java.util.List<int[]> a, java.util.List<int[]> b) {
-        if (a.size() != b.size()) return false;
-        for (int i = 0; i < a.size(); i++) if (a.get(i)[1] != b.get(i)[1] || a.get(i)[4] != b.get(i)[4]) return false;
-        return true;
-    }
     /** Encounters per method; where Unbound has morning / evening / night lists that differ, each gets its own section. */
     private java.util.List<int[]> areaFor(int group, int num) {
         int now = periodOf(game.state.hour);
@@ -320,15 +320,24 @@ final class Bottom extends View {
         int e = headerFor(WILD_HEADERS, group, num);
         int[] timed = new int[5];
         for (int p = 1; p < 5; p++) timed[p] = headerFor(PERIOD_TABLES[p], group, num);
-        for (int k = 0; k < 4; k++) {
-            java.util.List<int[]> day = e != 0 ? monsOf(rom.u32(e + 4 + k * 4), k, 2) : null;
-            java.util.ArrayList<java.util.List<int[]>> variants = new java.util.ArrayList<>();
-            for (int p : new int[]{1, 3, 4}) {
-                java.util.List<int[]> v = timed[p] != 0 ? monsOf(rom.u32(timed[p] + 4 + k * 4), k, p) : null;
-                if (v != null && (day == null || !sameSpecies(v, day))) variants.add(v);
+        for (int k = 0; k < 4; k++) { // per method: species -> {k, species, lo, hi, % now, mask of periods it appears in}
+            java.util.LinkedHashMap<Integer, int[]> by = new java.util.LinkedHashMap<>();
+            for (int p = 1; p <= 4; p++) {
+                int hdr = timed[p] != 0 && rom.u32(timed[p] + 4 + k * 4) != 0 ? timed[p] : e;
+                java.util.List<int[]> l = hdr != 0 ? monsOf(rom.u32(hdr + 4 + k * 4), k, p) : null;
+                if (l == null) continue;
+                for (int[] m : l) {
+                    int[] r = by.get(m[1]);
+                    if (r == null) { r = new int[]{k, m[1], m[2], m[3], m[4], 0}; by.put(m[1], r); }
+                    r[2] = Math.min(r[2], m[2]); r[3] = Math.max(r[3], m[3]);
+                    if (p == now) r[4] = m[4];
+                    r[5] |= 1 << (p - 1);
+                }
             }
-            if (day != null) { if (variants.isEmpty()) for (int[] r : day) r[5] = 0; rows.addAll(day); }
-            for (java.util.List<int[]> v : variants) rows.addAll(v);
+            java.util.ArrayList<int[]> limited = new java.util.ArrayList<>();
+            for (int[] r : by.values()) { if (r[5] == 15) rows.add(r); else limited.add(r); } // all day first, like the DexNav
+            limited.sort((a, b) -> a[5] - b[5]);
+            rows.addAll(limited);
         }
         areaKey = key; areaRows = rows;
         return rows;
@@ -341,12 +350,13 @@ final class Bottom extends View {
         if (rows.isEmpty()) { window(8, AREA_TOP + 20, 232, 30); text("No wild Pokémon here.", 20, AREA_TOP + 27); areaHeader(place); return; }
         c.save(); c.clipRect(0, AREA_TOP, W, BAR_Y);
         for (int[] r : rows) {
-            if (r[0] * 8 + r[5] != kind) { // section label: method, and the time of day when it has its own list
+            if (r[0] * 16 + r[5] != kind) { // section label: method, and when it's time-limited the times (with "now")
                 if (x != 8) { y += 36; x = 8; }
-                kind = r[0] * 8 + r[5];
-                String label = AREA_KINDS[r[0]] + (r[5] == 0 ? "" : " - " + PERIODS[r[5]] + (r[5] == periodOf(s.hour) ? " (now)" : ""));
-                if (r[5] != 0) { c.drawBitmap(skin.item(PERIOD_ICONS[r[5]]), 6, y - 6, null); y += 6; } // Dawn / Sun / Dusk / Moon Stone
-                if (y - 6 >= AREA_TOP && y + 10 <= BAR_Y) small(label, r[5] != 0 ? 32 : 10, y + 2 - (r[5] != 0 ? 3 : 0)); // small() draws past the clip
+                kind = r[0] * 16 + r[5];
+                boolean timed5 = r[5] != 15;
+                String label = AREA_KINDS[r[0]] + (timed5 ? " - " + timeName(r[5]) + ((r[5] >> (periodOf(s.hour) - 1) & 1) != 0 ? " (now)" : "") : "");
+                if (timed5) { c.drawBitmap(skin.item(timeIcon(r[5])), 6, y - 6, null); y += 6; } // Dawn / Sun / Dusk / Moon Stone
+                if (y + 12 >= TOP_H && y - 2 <= BAR_Y - 4) small(label, timed5 ? 32 : 10, y + 2 - (timed5 ? 3 : 0)); // the bands hide what's half out
                 y += 13;
             }
             int nat = rom.nationalDex(r[1]);
@@ -359,15 +369,15 @@ final class Bottom extends View {
             c.restore();
             areaChips.add(new int[]{x, y, r[1]});
             String lv = r[2] == r[3] ? "ʟ" + r[2] : r[2] + "-" + r[3];
-            if (y + 6 >= AREA_TOP && y + 14 <= BAR_Y) small(lv, x + 54 - smallW(lv) - 3, y + 6);
-            if (r[4] > 0 && y + 19 >= AREA_TOP && y + 27 <= BAR_Y) { String pc = r[4] + "%"; small(pc, x + 54 - smallW(pc) - 3, y + 19); }
+            if (y + 14 >= TOP_H - 2 && y + 6 <= BAR_Y - 4) small(lv, x + 54 - smallW(lv) - 3, y + 6);
+            if (r[4] > 0 && y + 27 >= TOP_H - 2 && y + 19 <= BAR_Y - 4) { String pc = r[4] + "%"; small(pc, x + 54 - smallW(pc) - 3, y + 19); }
             x += 58;
             if (x + 56 > 244) { x = 8; y += 36; }
         }
         c.restore();
         areaHeader(place); // drawn last: the list scrolls under an opaque band, nothing is cut off against the grid
         int content = y + (x != 8 ? 36 : 0) + areaScroll - (AREA_TOP + 4);
-        areaMaxScroll = Math.max(0, content - (BAR_Y - AREA_TOP - 6));
+        areaMaxScroll = Math.max(0, content - (AREA_BOTTOM - AREA_TOP - 4));
         if (areaScroll > areaMaxScroll) areaScroll = areaMaxScroll;
     }
     private static final int AREA_TOP = TOP_H + 24; // under the fixed area-name header
@@ -375,7 +385,19 @@ final class Bottom extends View {
     private void areaHeader(String place) {
         window(0, TOP_H - 2, W, 26);
         text(place.isEmpty() ? "Area" : place, 10, TOP_H + 3);
+        window(0, AREA_BOTTOM, W, BAR_Y - AREA_BOTTOM); // matching band at the bottom: the list slides under both
     }
+    private static final int AREA_BOTTOM = BAR_Y - 16;
+    /** Period mask (morning 1, day 2, evening 4, night 8) -> the DexNav-style wording. */
+    private static String timeName(int m) {
+        switch (m) {
+            case 8: return "Night only"; case 7: return "Day only"; case 2: return "Daytime only";
+            case 1: return "Morning only"; case 4: return "Evening only"; case 3: return "Morning & day";
+            case 6: return "Day & evening"; case 12: return "Evening & night"; case 9: return "Night & morning";
+            default: return "Some times";
+        }
+    }
+    private static int timeIcon(int m) { return m == 8 || m == 9 ? 94 : m == 1 ? 100 : m == 4 || m == 12 ? 99 : 93; } // Moon / Dawn / Dusk / Sun Stone
     private int areaScroll, areaMaxScroll, dragLastY = -1;
     private final java.util.ArrayList<int[]> areaChips = new java.util.ArrayList<>(); // {x, y, species} as drawn
     private int dexSpecies = -1;
@@ -449,9 +471,17 @@ final class Bottom extends View {
     private int owGiveFor = -1, giveScroll;
     private static final int GIVE_ROW = 24, GIVE_Y = TOP_H + 30;
     /** Give: the holdable items over the party view; tap one to give it (a held item goes back to the Bag). */
+    private boolean takeConfirm;
     private void drawGiveList(Game.State s) {
         window(4, TOP_H + 2, W - 8, BAR_Y - TOP_H - 4);
         Game.Mon m = owGiveFor < s.party.length ? s.party[owGiveFor] : null;
+        if (takeConfirm && m != null) { // "Take the X from Y?" with Yes / No, like the game's prompts
+            String q = fit("Take the " + game.itemName(m.heldItem) + " from " + m.nick + "?", W - 24);
+            small(q, (W - smallW(q)) / 2, TOP_H + 12);
+            yesNoButton(232, TOP_H + 34, "Yes", pressed == 232);
+            yesNoButton(233, TOP_H + 34 + 52, "No", pressed == 233);
+            return;
+        }
         boolean holding = m != null && m.heldItem != 0;
         String head = m == null ? "" : holding ? "Holding " + game.itemName(m.heldItem) : "Give " + m.nick + " an item";
         small(fit(head, holding ? 100 : 150), 12, TOP_H + 10);
@@ -508,7 +538,7 @@ final class Bottom extends View {
             owMenuSlot = -1;
             if (hit == 160) game.openMenu(Game.POKEMON, slot);
             else if (hit == 161) owSwitchFrom = slot;
-            else if (hit == 162) { owGiveFor = slot; giveScroll = 0; }
+            else if (hit == 162) { owGiveFor = slot; giveScroll = 0; takeConfirm = false; }
             return;
         }
         int slot = hit - 20;
@@ -668,7 +698,7 @@ final class Bottom extends View {
         swapMark(toggleX + TOGGLE_W - 16, 10 + d);
     }
 
-    private static final int RP_W = 160, RP_ROW = 24, RP_H = 6 * 24 + 12, RP_X = (248 - 160) / 2, RP_Y = (216 - RP_H) / 2;
+    private static final int RP_W = 160, RP_ROW = 24, RP_H = 7 * 24 + 12, RP_X = (248 - 160) / 2, RP_Y = (216 - RP_H) / 2;
     private void drawResetPrompt() {
         fill.setColor(0x90000000); c.drawRect(0, 0, W, H, fill);
         if (game.slotPicker) { drawSlotPicker(); return; }
@@ -678,7 +708,8 @@ final class Bottom extends View {
             int y = RP_Y + 6 + i * RP_ROW, d = pressed == 60 + i ? 1 : 0;
             rect(RP_X + 6, y + d, RP_W - 12, RP_ROW - 2, sel ? colDarkSel() : colDark());
             String label = game.confirmRow == i ? (i == 1 ? "Load? Tap again" : "Reset? Tap again")
-                    : i == Game.ROW_VOLUME ? "- Volume " + game.volume + "% +" : Game.MENU_ROWS[i];
+                    : i == Game.ROW_VOLUME ? "- Volume " + game.volume + "% +"
+                    : i == Game.ROW_FF ? "Fast forward: " + (game.ffLatched ? "On" : "Off") : Game.MENU_ROWS[i];
             text(label, RP_X + (RP_W - textW(label)) / 2, y + 4 + d);
         }
     }
@@ -1347,9 +1378,9 @@ final class Bottom extends View {
             for (int who = 0; who < 4; who++) drawFieldMon(b, who);
             if (b.foeParty != null) partyBallRow(b.foeParty, 34);
             partyBallRow(b.allyParty != null ? b.allyParty : game.state.party, 153);
-            actionButton(33, 4, COL_Y, SIDE_W, SIDE_H, ball2x(), "Pokémon", live && b.actionCursor == Game.B_ACTION_POKEMON, skin.partyPal[10][5], skin.partyPal[10][4]);
-            actionButton(31, 4, COL_Y + SIDE_H + 4, SIDE_W, SIDE_H, cubeIcon(), "Cube", live && b.actionCursor == Game.B_ACTION_BAG, skin.partyPal[4][10], skin.partyPal[4][9]);
-            actionButton(30, FIGHT_X, COL_Y, FIGHT_W, SIDE_Y + FIGHT_H - COL_Y, fightIcon(), "Fight", live && b.actionCursor == Game.B_ACTION_FIGHT, fightRed(), lighten(fightRed()));
+            actionButton(33, 4, COL_Y, SIDE_W, SIDE_H, ball2x(), b.safari ? "Rock" : "Pokémon", live && b.actionCursor == Game.B_ACTION_POKEMON, skin.partyPal[10][5], skin.partyPal[10][4]);
+            actionButton(31, 4, COL_Y + SIDE_H + 4, SIDE_W, SIDE_H, cubeIcon(), b.safari ? "Bait" : "Cube", live && b.actionCursor == Game.B_ACTION_BAG, skin.partyPal[4][10], skin.partyPal[4][9]);
+            actionButton(30, FIGHT_X, COL_Y, FIGHT_W, SIDE_Y + FIGHT_H - COL_Y, b.safari ? skin.pokeBall : fightIcon(), b.safari ? "Ball" : "Fight", live && b.actionCursor == Game.B_ACTION_FIGHT, fightRed(), lighten(fightRed()));
             actionButton(32, RUN_X, RUN_Y, RUN_W, RUN_H, runIcon(), "Run", live && b.actionCursor == Game.B_ACTION_RUN, skin.partyPal[7][5], skin.partyPal[7][4]);
             if ((b.quickBall || b.fallbackBall != 0) && live) { // CFRU's Last Ball trigger over the exact ball it will throw (copied from the game's sprite)
                 int qd = pressed == 34 ? 1 : 0;
@@ -1448,18 +1479,23 @@ final class Bottom extends View {
         topBoxCanvas.drawBitmap(skin.battleTextbox, 0, 0, null);
         if (b.mode != Game.Battle.WAIT) promptBattler = b.battler; // between screens the game briefly reports nobody choosing
         Game.BattleMon who = b.doubles && b.mons[promptBattler & 3] != null ? b.mons[promptBattler & 3] : b.player;
-        String prompt = b.choosing ? "Choose a Pokémon." : b.bagOpen ? "Choose an item." : b.mode == Game.Battle.TARGET ? "Choose a target." : "What will " + who.nick + " do?";
-        for (int i = 0, x = 16; i < prompt.length(); i++) {
-            Integer g = Rom.ENC.get(prompt.charAt(i));
-            int gl = g == null ? 0xAC : g, w = rom.glyphWidth(gl);
-            for (int py = 0; py < 14; py++)
-                for (int px = 0; px < w; px++) {
-                    int v = rom.glyphPixel(gl, px, py);
-                    if (v == 1) topBox.setPixel(x + px, 9 + py, skin.textInk);
-                    else if (v == 2) topBox.setPixel(x + px, 9 + py, skin.textShadow);
-                }
-            x += w;
-        }
+        String prompt = b.yesNo >= 0 && b.yesNoText != null ? b.yesNoText
+                : b.choosing ? "Choose a Pokémon." : b.bagOpen ? "Choose an item." : b.mode == Game.Battle.TARGET ? "Choose a target."
+                : b.safari ? "What will you do?" : "What will " + who.nick + " do?";
+        String[] lines = prompt.split("\n");
+        for (int li = 0; li < Math.min(2, lines.length); li++)
+            for (int i = 0, x = 16; i < lines[li].length(); i++) {
+                Integer g = Rom.ENC.get(lines[li].charAt(i));
+                int gl = g == null ? 0xAC : g, w = rom.glyphWidth(gl);
+                if (x + w > 232) break;
+                for (int py = 0; py < 14; py++)
+                    for (int px = 0; px < w; px++) {
+                        int v = rom.glyphPixel(gl, px, py);
+                        if (v == 1) topBox.setPixel(x + px, 9 + li * 15 + py, skin.textInk);
+                        else if (v == 2) topBox.setPixel(x + px, 9 + li * 15 + py, skin.textShadow);
+                    }
+                x += w;
+            }
         return topBox;
     }
 
@@ -1686,6 +1722,7 @@ final class Bottom extends View {
             }
             rows.add(new String[]{"Add ROM…", "", "a"});
             rows.add(new String[]{"Patch a ROM…", "IPS UPS BPS", "h"});
+            rows.add(new String[]{"Get Unbound patch", "official page", "u"});
             rows.add(new String[]{"Home shortcut", "this game", "s"});
             return rows.toArray(new String[0][]);
         }
@@ -1753,6 +1790,7 @@ final class Bottom extends View {
             case 'a': host.addRom(); return;
             case 's': host.addShortcut(); return;
             case 'h': host.patchRom(); return;
+            case 'u': host.openUrl("https://www.pokecommunity.com/threads/pok%C3%A9mon-unbound-completed.382178/"); return;
             case 'x': return; // About page: information only
         }
         switch (Integer.parseInt(act)) {
@@ -1812,7 +1850,9 @@ final class Bottom extends View {
         int hit = -1;
         boolean inSetButton = x >= SET_X && x < SET_X + SET_W && y >= SET_Y && y < SET_Y + SET_H;
         Game.Battle battle = game.battle;
-        if (game.resetPrompt && game.slotPicker) {
+        if (game.owYesNo >= 0 && battle == null && !game.resetPrompt) { // only the two buttons work
+            hit = x < YES_X || x >= YES_X + YES_W ? -1 : y >= YES_Y && y < YES_Y + YES_H ? 234 : y >= YES_Y + 52 && y < YES_Y + 52 + YES_H ? 235 : -1;
+        } else if (game.resetPrompt && game.slotPicker) {
             int r = (y - SP_Y - 26) / SP_ROW;
             if (x >= SP_X && x < SP_X + SP_W && y >= SP_Y + 26 && r < Math.min(SP_ROWS, game.pickerSlots.length)) hit = 240 + r;
             else hit = 249; // outside the list: back to the menu
@@ -1833,6 +1873,9 @@ final class Bottom extends View {
             else if (owView == 2 && dexSpecies > 0 && y >= TOP_H && y < BAR_Y) hit = 199 + 1; // close the entry (200)
             else if (owView == 2 && y >= TOP_H && y < BAR_Y) {
                 for (int i = 0; i < areaChips.size(); i++) { int[] ch = areaChips.get(i); if (x >= ch[0] && x < ch[0] + 56 && y >= ch[1] && y < ch[1] + 34 && ch[1] + 20 >= AREA_TOP) hit = 201 + i; }
+            }
+            else if (owGiveFor >= 0 && takeConfirm && y >= TOP_H && y < BAR_Y) {
+                if (x >= YES_X && x < YES_X + YES_W) hit = y >= TOP_H + 34 && y < TOP_H + 34 + YES_H ? 232 : y >= TOP_H + 86 && y < TOP_H + 86 + YES_H ? 233 : -1;
             }
             else if (owGiveFor >= 0 && y >= TOP_H && y < BAR_Y) {
                 if (y < GIVE_Y && x >= W - 78) hit = 170;
@@ -1904,6 +1947,7 @@ final class Bottom extends View {
                     else if (hit == 249 && game.slotPicker) { game.slotPicker = false; game.confirmRow = -1; game.chime(); }
                     else if (hit >= 30 && hit < 50) { if (battle != null) battleTap(hit); }
                     else if ((hit == 230 || hit == 231) && battle != null && battle.yesNo >= 0) game.battleYesNo(hit - 230); // the game plays its own select sound
+                    else if ((hit == 234 || hit == 235) && game.owYesNo >= 0) game.answerOwYesNo(hit - 234);
                     else if (hit >= 70 && hit < 74) { if (battle != null && battle.mode == Game.Battle.TARGET) battleTap(hit); }
                     else if (hit >= 74 && hit < 78) { if (battle != null && battle.mode == Game.Battle.MOVES) battleTap(hit); }
                     else if (hit >= 78 && hit < 82 && battle != null && battle.mode == Game.Battle.SWAP) game.swapMoveTo(hit - 78);
@@ -1916,10 +1960,15 @@ final class Bottom extends View {
                     else if (hit == 200 && dexSpecies > 0) { dexSpecies = -1; game.chime(); }
                     else if (hit > 200 && hit - 201 < areaChips.size() && owView == 2) { dexSpecies = areaChips.get(hit - 201)[2]; game.chime(); }
                     else if (hit >= 160 && hit < 164) owTap(hit);
+                    else if ((hit == 232 || hit == 233) && owGiveFor >= 0 && takeConfirm) {
+                        game.chime();
+                        if (hit == 232) { game.partyTakeItem(owGiveFor); owGiveFor = -1; }
+                        takeConfirm = false;
+                    }
                     else if (hit >= 170 && hit < 173 && owGiveFor >= 0) {
                         game.chime();
                         int slot = owGiveFor;
-                        if (hit == 171) { if (slot < game.state.party.length && game.state.party[slot].heldItem != 0) { game.partyTakeItem(slot); owGiveFor = -1; } }
+                        if (hit == 171) { if (slot < game.state.party.length && game.state.party[slot].heldItem != 0) takeConfirm = true; }
                         else if (hit == 172) {
                             java.util.List<int[]> items = game.holdableItems();
                             if (giveTapIndex >= 0 && giveTapIndex < items.size()) { game.partyGiveItem(slot, items.get(giveTapIndex)[0]); owGiveFor = -1; }

@@ -52,6 +52,9 @@ public final class MainActivity extends Activity implements Bottom.Host {
         return new File(appDir("states"), new File(rom).getName().replaceAll("[.]gba$", "") + ".ss" + slot);
     }
     void requestState(String op, int slot) { stateSlot = slot; stateOp = op; }
+    @Override public void openUrl(String url) {
+        try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))); } catch (Exception e) { toast("No browser found"); }
+    }
     @Override public java.util.List<String[]> stateSlots() {
         java.util.ArrayList<String[]> out = new java.util.ArrayList<>();
         java.text.SimpleDateFormat f = new java.text.SimpleDateFormat("MM/dd HH:mm", java.util.Locale.US);
@@ -444,8 +447,16 @@ public final class MainActivity extends Activity implements Bottom.Host {
                 if (supportedTitle(out) != null) { java.util.LinkedHashSet<String> set = romFiles(); set.add(out.getPath()); saveRomFiles(set); }
                 msg = "Created " + out.getName() + (supportedTitle(out) == null ? " (not a supported game yet)" : "");
             } catch (Exception e) { msg = "Patch failed: " + e.getMessage(); }
-            String m = msg;
-            runOnUiThread(() -> new AlertDialog.Builder(this).setMessage(m).setPositiveButton("OK", null).show());
+            String m = msg; boolean ok = !msg.startsWith("Patch failed");
+            runOnUiThread(() -> {
+                AlertDialog.Builder b = new AlertDialog.Builder(this).setMessage(ok ? m + "
+
+Delete the patch file " + patchName + "? (The patched game is kept.)" : m);
+                if (ok) b.setPositiveButton("Delete", (d, i) -> { try { android.provider.DocumentsContract.deleteDocument(getContentResolver(), patch); toast("Patch file deleted"); } catch (Exception e) { toast("Couldn't delete it"); } })
+                        .setNegativeButton("Keep", null);
+                else b.setPositiveButton("OK", null);
+                b.show();
+            });
         }).start();
     }
 
@@ -725,7 +736,7 @@ public final class MainActivity extends Activity implements Bottom.Host {
             long a = System.nanoTime();
             int n = 0;
             // Hidden hook phases (screen frozen) run 4 emulator frames per displayed frame; their audio is dropped.
-            for (int rep = game.turbo || fastForward ? 4 : 1; rep > 0 && running; rep--) {
+            for (int rep = game.turbo || fastForward || game.ffLatched ? 4 : 1; rep > 0 && running; rep--) {
                 runStateOp();
                 n = Core.frame(game.filterKeys(heldKeys()) | game.macroKeys(), pixels, samples);
                 if (rep > 1) { Ra.doFrame(); game.poll(frame++, keys | stickKeys); }
