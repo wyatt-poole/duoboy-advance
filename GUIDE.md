@@ -51,7 +51,7 @@ On the very first launch DuoBoy lists the ROMs it can find (supported games firs
 
 **Yes/No questions** (nickname, learning a move, switching) appear as two buttons; the d-pad works too.
 
-If a battle type isn't supported yet (link battles, Battle Frontier facilities, Safari-style battles and similar), the game's own menus are used on the top screen and the bottom just shows the field.
+Every battle type uses the bottom screen. Safari battles show **Ball / Bait / Rock / Run** in place of the usual four. Only the scripted catching tutorial and recorded-battle playback keep the game's own menus (your input isn't the player's there).
 
 ## Save states and speed
 

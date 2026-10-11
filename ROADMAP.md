@@ -13,7 +13,6 @@ Rough order, not promises. Ideas and help are welcome; see [CONTRIBUTING.md](CON
 ## Later
 - **More games**: vanilla FireRed / LeafGreen, Emerald, Ruby / Sapphire, and other FireRed-based hacks, through per-game profiles
 - **RetroAchievements browser** from the home screen: scroll, search, sort, compare, details
-- More battle types (partner and multi battles, Battle Frontier facilities, Safari)
 - Built-in list of ROM-hack patches to download (patches only; you always bring your own base ROM)
 
 ## Emulator features

@@ -64,7 +64,7 @@ These should work or fall back safely, but haven't been played through yet. Repo
 - Learning a new move in battle ("Delete a move?")
 - Eggs in the party (display and item rules)
 - The ROM patcher and home shortcuts from start to finish on a device
-- Battle types other than wild and trainer singles / doubles and in-game partner battles: link and multi battles, Battle Frontier facilities, Safari-style battles, special scripted battles (these use the game's own menus)
+- Battle Frontier-style facilities and Safari battles (supported, lightly tested)
 - Unbound versions other than 2.1.1.1 (they run in safe mode)
 - Dual-screen devices other than the AYN Thor
 - A full new game past the first partner battle
