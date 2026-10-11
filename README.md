@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/images/icon.png" width="128" alt="DuoBoy Advance"></p>
+
 # DuoBoy Advance
 
 A dual-screen Game Boy Advance experience for Android handhelds like the **AYN Thor**. The game runs on the top screen; the bottom screen becomes a touch companion styled after the game itself, inspired by the 3DS Pokémon games.
@@ -5,6 +7,15 @@ A dual-screen Game Boy Advance experience for Android handhelds like the **AYN T
 **Version 0.2.2.** Supports **Pokémon Unbound 2.1.1.1** only. More games are planned.
 
 > DuoBoy Advance does not include any game. You need your own legally obtained ROM.
+
+<p align="center">
+  <img src="docs/images/battle.png" width="180" alt="Battle: top screen keeps the fight, bottom has the actions">
+  <img src="docs/images/fight-menu.png" width="180" alt="Fight menu with type, power, accuracy and PP">
+  <img src="docs/images/party.png" width="180" alt="Overworld party">
+  <img src="docs/images/town-map.png" width="180" alt="Region map with your position">
+  <img src="docs/images/dexnav.png" width="180" alt="DexNav-style area view (once unlocked in the game)">
+</p>
+<p align="center"><sub>Taken with the built-in dual-screen screenshot (Start + Select → Screenshot).</sub></p>
 
 ## What it does
 
