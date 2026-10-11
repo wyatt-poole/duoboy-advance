@@ -449,9 +449,7 @@ public final class MainActivity extends Activity implements Bottom.Host {
             } catch (Exception e) { msg = "Patch failed: " + e.getMessage(); }
             String m = msg; boolean ok = !msg.startsWith("Patch failed");
             runOnUiThread(() -> {
-                AlertDialog.Builder b = new AlertDialog.Builder(this).setMessage(ok ? m + "
-
-Delete the patch file " + patchName + "? (The patched game is kept.)" : m);
+                AlertDialog.Builder b = new AlertDialog.Builder(this).setMessage(ok ? m + "\n\nDelete the patch file " + patchName + "? (The patched game is kept.)" : m);
                 if (ok) b.setPositiveButton("Delete", (d, i) -> { try { android.provider.DocumentsContract.deleteDocument(getContentResolver(), patch); toast("Patch file deleted"); } catch (Exception e) { toast("Couldn't delete it"); } })
                         .setNegativeButton("Keep", null);
                 else b.setPositiveButton("OK", null);
