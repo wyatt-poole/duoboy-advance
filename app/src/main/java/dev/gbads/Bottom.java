@@ -87,12 +87,22 @@ final class Bottom extends View {
                 for (int px = 0; px < 8 && px < w + 1; px++) {
                     int v = rom.smallGlyphPixel(gl, px, py);
                     if (x + px < 0 || x + px >= W || y + py < 0 || y + py >= H) continue;
-                    if (v == 1) fb.setPixel(x + px, y + py, skin.textInk);
-                    else if (v == 2) fb.setPixel(x + px, y + py, skin.textShadow);
+                    if (v == 1) fb.setPixel(x + px, y + py, inkOverride != 0 ? inkOverride : skin.textInk);
+                    else if (v == 2) fb.setPixel(x + px, y + py, shadowOverride != 0 ? shadowOverride : skin.textShadow);
                 }
             x += w;
         }
         return x - x0;
+    }
+    /** What the bottom screen is showing, for screenshot file names. */
+    String viewTag() {
+        Game.Battle b = battle0();
+        if (game.classic) return "classic";
+        if (b != null) return "battle-" + (b.bagOpen ? "bag" : b.choosing || b.partyMenu ? "party" : b.mode == Game.Battle.WAIT ? "wait" : "menu");
+        if (settingsOpen) return "settings";
+        if (!game.inGame) return "title";
+        if (owGiveFor >= 0) return "item";
+        return mapShown() ? "map" : owView == 2 ? "dexnav" : "party";
     }
     private int smallW(String s) {
         int w = 0;
@@ -200,7 +210,8 @@ final class Bottom extends View {
         if (battle == null && !game.battleStarting && !intro) revealed = false;
         if (intro && battle == null && !game.battleStarting && ++introGapFrames > 240) intro = false; // transition that never became a battle
         else if (battle != null || game.battleStarting) introGapFrames = 0;
-        if (battle != null) { settingsOpen = false; drawBattle(battle); }
+        if (game.classic) { fb.eraseColor(0xFF000000); if (game.resetPrompt) drawResetPrompt(); drawToast(); }
+        else if (battle != null) { settingsOpen = false; drawBattle(battle); }
         else if (game.inGame) { settingsOpen = false; drawGame(game.state); }
         else if (settingsOpen) drawSettings();
         else { // title: black with a settings cog; save select and everything else: just black
@@ -264,8 +275,8 @@ final class Bottom extends View {
         toggleButton(pressed == 50);
 
         // bottom bar: Unbound's purple strip with the menu icons (colour; grey while touched — the reverse of the game's cursor)
-        rect(0, BAR_Y - 2, W, 4, skin.bar.getPixel(8, 150)); // the bar's purple up to its white line: nothing shows through above it
-        strip(120, 40, BAR_Y + 2);
+        strip(120, 40, BAR_Y);          // the bar's white line is the edge: nothing above it but the view
+        strip(158, 2, BAR_Y + 40);      // and its bottom rows fill the last two pixel rows
         for (int i = 0; i < BUTTON_ENTRY.length; i++)
             c.drawBitmap(entryIcon(BUTTON_ENTRY[i], pressed != i && s.menuOn[BUTTON_ENTRY[i]]), buttonX(i), ICON_Y + (pressed == i ? 1 : 0), null); // grey = not unlocked yet
     }
@@ -349,7 +360,7 @@ final class Bottom extends View {
         areaChips.clear();
         String place = s.mapSec >= 0 ? rom.mapName(s.mapSec) : "";
         if (rows.isEmpty()) { window(8, AREA_TOP + 20, 232, 30); text("No wild Pokémon here.", 20, AREA_TOP + 27); areaHeader(place); return; }
-        c.save(); c.clipRect(0, AREA_TOP, W, BAR_Y - 2);
+        c.save(); c.clipRect(0, AREA_TOP, W, BAR_Y);
         for (int[] r : rows) {
             if (r[0] * 16 + r[5] != kind) { // section label: method, and when it's time-limited the times (with "now")
                 if (x != 8) { y += 36; x = 8; }
@@ -363,7 +374,7 @@ final class Bottom extends View {
             int nat = rom.nationalDex(r[1]);
             boolean seen = Game.dexFlag(s.dexSeen, nat), caught = Game.dexFlag(s.dexCaught, nat);
             window(x, y + (pressed == 201 + areaChips.size() ? 1 : 0), 56, 34);
-            c.save(); c.clipRect(x + 3, Math.max(AREA_TOP, y + 3), x + 53, Math.min(BAR_Y - 2, y + 31));
+            c.save(); c.clipRect(x + 3, Math.max(AREA_TOP, y + 3), x + 53, Math.min(BAR_Y, y + 31));
             Bitmap ic = animIcon(r[1], 1, 1);
             c.drawBitmap(seen ? ic : silhouette(ic, skin.tb[9]), x - 2, y - 2, null); // unseen: a silhouette (no spoilers)
             if (caught) c.drawBitmap(skin.partyBalls[Skin.BALL_OK], x + 4, y + 22, null);
@@ -387,7 +398,7 @@ final class Bottom extends View {
         window(0, TOP_H - 2, W, 26);
         text(place.isEmpty() ? "Area" : place, 10, TOP_H + 3);
     }
-    private static final int AREA_BOTTOM = BAR_Y - 2; // the bar is the bottom edge
+    private static final int AREA_BOTTOM = BAR_Y; // the bar is the bottom edge
     /** Period mask (morning 1, day 2, evening 4, night 8) -> the DexNav-style wording. */
     private static String timeName(int m) {
         switch (m) {
@@ -467,7 +478,7 @@ final class Bottom extends View {
         return new int[]{Math.round(fx + (x - fx) * t), Math.round(fy + (y - fy) * t)};
     }
     private void closeOwMenu() { owMenuSlot = -1; owSwitchFrom = -1; }
-    private static final String[] OW_MENU = {"Summary", "Shift", "Item", "Cancel"};
+    private static final String[] OW_MENU = {"Summary", "Switch", "Item", "Cancel"}; // the overworld party menu says Switch; in battle it is Shift
     private int owGiveFor = -1, giveScroll;
     private static final int GIVE_ROW = 24, GIVE_Y = TOP_H + 30;
     /** Give: the holdable items over the party view; tap one to give it (a held item goes back to the Bag). */
@@ -550,8 +561,8 @@ final class Bottom extends View {
         menuInputSeq = game.inputSeq;
     }
     /** Card top-left: the overworld's even grid, or the battle party menu's two columns with the right one dropped 8px. */
-    private static int[] cardPos(int i, boolean staggered) {
-        return staggered ? new int[]{i % 2 == 0 ? 8 : 128, 36 + (i / 2) * 40 + (i % 2) * 8} : new int[]{8 + (i % 2) * 120, TOP_H + 4 + (i / 2) * 45};
+    private static int[] cardPos(int i, boolean battle) {
+        return new int[]{12 + (i % 2) * 112, (battle ? 36 : TOP_H + 6) + (i / 2) * 40 + (i % 2) * 8}; // the game: 8 + 112i on 240px, 40 per row, right column 8 lower
     }
     /**
      * Party cards as the game's party menu draws them: the card art (normal / fainted / selected), its Poké Ball (open on
@@ -570,24 +581,26 @@ final class Bottom extends View {
     }
     private void drawCard(Game.Mon m, int x, int y, boolean sel) {
             c.drawBitmap(m.egg ? (sel ? skin.slotEggSelected : skin.slotEgg) : sel ? skin.slotSelected : m.hp == 0 ? skin.slotFainted : skin.slotNormal, x, y, null);
-            c.drawBitmap(skin.menuBall[sel ? 1 : 0], x - 6, y - 3, null);
+            c.drawBitmap(skin.menuBall[sel ? 1 : 0], x, y, null);
             // hop on the icon's anim steps; fainted mons keep frame 0 but still hop on the game's "still" anim (29 frames)
             int f = iconFrame(m.hp, m.maxHp), phase = m.hp > 0 ? f : (game.frame / 29) & 1, hop = sel ? (phase == 1 ? -3 : 1) : 0;
-            c.drawBitmap(rom.icon(m.species, f), x + 3, y - 6 + hop, null);
-            if (m.heldItem != 0) c.drawBitmap(skin.heldItem[m.heldItem >= 121 && m.heldItem <= 132 ? 1 : 0], x + 19, y + 16 + hop, null);
-            text(m.nick, x + 38, y + 3);
+            c.drawBitmap(rom.icon(m.species, f), x + 6, y - 4 + hop, null); // measured against the game over its animation frames
+            if (m.heldItem != 0) c.drawBitmap(skin.heldItem[m.heldItem >= 121 && m.heldItem <= 132 ? 1 : 0], x + 21, y + 19 + hop, null);
+            small(m.nick, x + 40, y + 5); // the party menu's small font, as the game draws it
             if (m.egg) return; // the game's party menu shows an Egg's icon and name only
             int g = rom.gender(m.species, m.personality);
             if (g < 2) {
                 int[] pal = skin.partyPal[g == 0 ? 3 : 4];
-                textCol(g == 0 ? "♂" : "♀", x + 100, y + 3, pal[11], pal[12]);
+                inkOverride = pal[11]; shadowOverride = pal[12];
+                small(g == 0 ? "♂" : "♀", x + 97, y + 5);
+                inkOverride = 0; shadowOverride = 0;
             }
             hpBar(x + Skin.HP_X, y + Skin.HP_Y, m.hp, m.maxHp);
             int badge = m.hp == 0 ? Skin.STATUS_FNT : statusBadge(m.status);
-            if (badge >= 0) c.drawBitmap(skin.statusIcon[badge], x + 1, y + 27, null);
-            else text("ʟ" + m.level, x + 4, y + 23);
+            if (badge >= 0) c.drawBitmap(skin.statusIcon[badge], x + 5, y + 29, null);
+            else { small("ʟ", x + 5, y + 26); small(String.valueOf(m.level), x + 12, y + 26); } // the game sets the number 7px after the Lv glyph
             String hp = String.format(java.util.Locale.ROOT, "%3d/%3d", m.hp, m.maxHp);
-            text(hp, x + 96 - textW(hp), y + 23);
+            small(hp, x + 94 - smallW(hp), y + 26);
     }
     /** Status condition bits -> the party menu's badge (sleep 0..2, poison 3, burn 4, freeze 5, paralysis 6, toxic 7). */
     private static int statusBadge(int st) {
@@ -606,7 +619,7 @@ final class Bottom extends View {
     private int selX = -1, selY = -1, selSeq, selPlayerX, selPlayerY;
 
     private void drawMapView(Game.State s) {
-        int viewY = TOP_H, viewH = BAR_Y + 2 - TOP_H;
+        int viewY = TOP_H, viewH = BAR_Y - TOP_H;
         blit(skin.regionMap, MAP_SRC_X, MAP_SRC_Y, MAP_W, viewH, MAP_FRAME_W, viewY);
         blit(skin.mapFrame, 16 - MAP_FRAME_W, MAP_SRC_Y, MAP_FRAME_W, viewH, 0, viewY);                    // left piece
         blit(skin.mapFrame, 224, MAP_SRC_Y, MAP_FRAME_W, viewH, MAP_FRAME_W + MAP_W, viewY);               // right piece
@@ -698,7 +711,9 @@ final class Bottom extends View {
         swapMark(toggleX + TOGGLE_W - 16, 10 + d);
     }
 
-    private static final int RP_W = 160, RP_ROW = 24, RP_H = 7 * 24 + 12, RP_X = (248 - 160) / 2, RP_Y = (216 - RP_H) / 2;
+    private static final int RP_W = 160, RP_ROW = 24, RP_H = 8 * 24 + 12, RP_X = (248 - 160) / 2, RP_Y = (216 - RP_H) / 2;
+    /** Classic mode: the Start + Select menu over the top screen (the bottom window is gone), transparent around it. */
+    Bitmap pauseMenuForTop() { fb.eraseColor(0); drawResetPrompt(); return fb; }
     private void drawResetPrompt() {
         fill.setColor(0x90000000); c.drawRect(0, 0, W, H, fill);
         if (game.slotPicker) { drawSlotPicker(); return; }
@@ -709,7 +724,8 @@ final class Bottom extends View {
             rect(RP_X + 6, y + d, RP_W - 12, RP_ROW - 2, sel ? colDarkSel() : colDark());
             String label = game.confirmRow == i ? (i == 1 ? "Load? Tap again" : "Reset? Tap again")
                     : i == Game.ROW_VOLUME ? "- Volume " + game.volume + "% +"
-                    : i == Game.ROW_FF ? "Fast forward: " + (game.ffLatched ? "On" : "Off") : Game.MENU_ROWS[i];
+                    : i == Game.ROW_FF ? "Fast forward: " + (game.ffLatched ? "On" : "Off")
+                    : i == Game.ROW_CLASSIC ? "Classic mode: " + (game.classic ? "On" : "Off") : Game.MENU_ROWS[i];
             text(label, RP_X + (RP_W - textW(label)) / 2, y + 4 + d);
         }
     }
@@ -1146,10 +1162,11 @@ final class Bottom extends View {
             small("ʟ" + m.level, 42, y + 5 + d);
             int badge = m.hp == 0 ? Skin.STATUS_FNT : statusBadge(m.status);
             if (badge >= 0) c.drawBitmap(skin.statusIcon[badge], 62, y + 6 + d, null);
-            int fw = m.maxHp == 0 ? 0 : Math.max(m.hp > 0 ? 1 : 0, 50 * m.hp / m.maxHp);
+            int hp = game.animHp(i, m.hp); // rolls up after a heal, like the party menu
+            int fw = m.maxHp == 0 ? 0 : Math.max(hp > 0 ? 1 : 0, 50 * hp / m.maxHp);
             rect(42, y + 17 + d, 52, 4, skin.hp[7]);
             rect(43, y + 18 + d, 50, 2, skin.hp[5]);
-            rect(43, y + 18 + d, fw, 2, skin.hp[hpColour(m.hp, m.maxHp)]);
+            rect(43, y + 18 + d, fw, 2, skin.hp[hpColour(hp, m.maxHp)]);
         }
         for (int t = 0; t < 3; t++) { // pocket tabs
             int x = BAG_X + t * 47, d = pressed == 120 + t ? 1 : 0;
@@ -1474,7 +1491,7 @@ final class Bottom extends View {
     private int promptBattler;
     Bitmap battleTopOverlay() {
         Game.Battle b = game.battle;
-        if (b == null || b.passive || !b.topHold && (!b.inBattleScreen || (b.mode == Game.Battle.WAIT && !b.menuOnTop && !b.choosing && !b.bagOpen))) return null;
+        if (b == null || b.passive || !b.topHold && b.yesNo < 0 && (!b.inBattleScreen || (b.mode == Game.Battle.WAIT && !b.menuOnTop && !b.choosing && !b.bagOpen))) return null;
         topBox.eraseColor(0);
         topBoxCanvas.drawBitmap(skin.battleTextbox, 0, 0, null);
         if (b.mode != Game.Battle.WAIT) promptBattler = b.battler; // between screens the game briefly reports nobody choosing
@@ -1845,7 +1862,8 @@ final class Bottom extends View {
             if (game.infoCloseReq) { infoBattler = -1; game.infoCloseReq = false; }
             if (swallowTouch) { pressed = -1; dragFrom = -1; dragging = false; return true; }
         }
-        if (e.getActionMasked() == MotionEvent.ACTION_DOWN && game.awaitingA && !game.resetPrompt && (battle0() != null || game.inGame)) {
+        if (game.classic && !game.resetPrompt) return true; // nothing to touch in classic mode
+        if (e.getActionMasked() == MotionEvent.ACTION_DOWN && game.awaitingA && !game.resetPrompt && !game.classic && (battle0() != null || game.inGame)) {
             game.tapA(); swallowTouch = true; pressed = -1; return true; // dialogue waiting: a tap anywhere is A
         }
         if (swallowTouch) { if (e.getActionMasked() == MotionEvent.ACTION_UP || e.getActionMasked() == MotionEvent.ACTION_CANCEL) swallowTouch = false; return true; }
@@ -1884,9 +1902,11 @@ final class Bottom extends View {
                 else if (y < GIVE_Y && x >= W - 78 - 58) hit = 171; // Take
                 else if (y >= GIVE_Y) { giveTapIndex = (y - GIVE_Y + giveScroll) / GIVE_ROW; hit = 172; }
             }
-            else if (partyShown() && y >= TOP_H + 4 && y < TOP_H + 4 + 3 * 45 && x >= 8 && x < 240) { // party card -> its menu
-                int slot = ((y - TOP_H - 4) / 45) * 2 + (x >= 128 ? 1 : 0);
-                if (slot < game.state.party.length) hit = 20 + slot;
+            else if (partyShown() && y >= TOP_H && y < BAR_Y) { // party card -> its menu
+                for (int i = 0; i < game.state.party.length && i < 6; i++) {
+                    int[] at = cardPos(i, false);
+                    if (x >= at[0] && x < at[0] + Skin.SLOT_W && y >= at[1] && y < at[1] + Skin.SLOT_H) hit = 20 + i;
+                }
             }
             else if (y < TOP_H && x < 40 && game.state.menuOn[Game.TRAINER_CARD]) hit = 10; // trainer card
             else if (y < TOP_H && x >= W - 40) hit = 11;     // options

@@ -1,3 +1,13 @@
+# DuoBoy Advance 0.2.4
+
+- **Party cards** (overworld and battle) now match the game's party menu pixel for pixel: same grid, same small font, Poké Ball and icon in the corner, Lv / HP rows where the game puts them.
+- **Classic mode** (Start + Select → Classic mode): the game runs like on a GBA with no bottom screen, and the second screen is released for other apps. The pause menu then shows on the top screen. Remembered between launches.
+- **No more flashes** of the game's own boxes on the top screen: battle Yes/No prompts (including "switch Pokémon?" after a KO and "Delete a move?") are detected from the box itself, hidden, and the question is shown in DuoBoy's text box; overworld Yes/No boxes stay hidden while the game is still printing; picking a move or target no longer flashes the game's menu.
+- **Bag / Pokémon** from the battle screen open without the black frame; the held-item icon is drawn whole.
+- **Potion from the bottom bag** plays the item sound, rolls the HP bar up and shows "HP was restored".
+- Overworld party menu says **Switch** (battle keeps Shift). Menu icons are no longer all greyed after saving.
+- Screenshots are named with where they were taken (party, map, dexnav, battle-menu, …).
+
 # DuoBoy Advance 0.2.3
 
 - DexNav view: the list scrolls cleanly down to the bar (no fixed strip or stray text at the edge); no extra band at the bottom.

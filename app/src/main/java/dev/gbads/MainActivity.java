@@ -109,7 +109,8 @@ public final class MainActivity extends Activity implements Bottom.Host {
         if (over != null) c.drawBitmap(over, 4, 112, null);
         if (bottomView != null) c.drawBitmap(bottomView.snapshot(), 0, 160, null);
         Bitmap big = Bitmap.createScaledBitmap(shot, 248 * 4, 376 * 4, false);
-        String name = "DuoBoy_" + new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(new java.util.Date()) + ".png";
+        String name = "DuoBoy_" + new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(new java.util.Date())
+                + "_" + (bottomView != null ? bottomView.viewTag() : "top") + ".png"; // where it was taken, for bug reports
         android.content.ContentValues v = new android.content.ContentValues();
         v.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, name);
         v.put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png");
@@ -193,7 +194,7 @@ public final class MainActivity extends Activity implements Bottom.Host {
         }, new android.content.IntentFilter("dev.gbads.DUMP"), RECEIVER_EXPORTED);
         // debug: `adb shell am broadcast -a dev.gbads.KEY --ei k 1 --ei f 6` holds Core key bits k for f frames (testing)
         registerReceiver(new android.content.BroadcastReceiver() {
-            @Override public void onReceive(Context c, Intent i) { debugKeys = i.getIntExtra("k", 0); debugFrames = i.getIntExtra("f", 6); }
+            @Override public void onReceive(Context c, Intent i) { debugKeys = i.getIntExtra("k", 0); debugFrames = i.getIntExtra("f", 6); if (i.hasExtra("classic")) game.setClassic(i.getIntExtra("classic", 0) != 0); }
         }, new android.content.IntentFilter("dev.gbads.KEY"), RECEIVER_EXPORTED);
         // debug poke: `adb shell am broadcast -a dev.gbads.POKE --ei a ADDR --ei v BYTE` (test setups only)
         registerReceiver(new android.content.BroadcastReceiver() {
@@ -334,6 +335,7 @@ public final class MainActivity extends Activity implements Bottom.Host {
         try {
             game = new Game(new Rom(new File(romPath)));
             if (game.safeMode) toast("Untested Unbound version: DuoBoy's bottom-screen extras are limited.");
+            if (prefs.getBoolean("classic", false)) { game.setClassic(true); classicShown = false; } // applied on the first top-screen draw
             buildScreens(romPath, sav);
         } catch (Throwable e) { // a ROM we can't run (not Unbound, truncated, ...): never crash-loop on it
             android.util.Log.e("gbads", "can't boot " + romPath, e);
@@ -347,7 +349,7 @@ public final class MainActivity extends Activity implements Bottom.Host {
     }
     private void buildScreens(String romPath, String sav) {
         top = new View(this) {
-            final Paint p = new Paint(), fadePaint = new Paint(); final Rect dst = new Rect(), ovDst = new Rect();
+            final Paint p = new Paint(), fadePaint = new Paint(); final Rect dst = new Rect(), ovDst = new Rect(), menuDst = new Rect();
             { p.setFilterBitmap(false); } // hard pixels; Android filters scaled bitmaps by default
             @Override protected void onDraw(Canvas c) {
                 // Fill the screen keeping 3:2. ponytail: non-integer (6.75x on the Thor); add an integer-scale option if shimmer bothers anyone
@@ -364,6 +366,14 @@ public final class MainActivity extends Activity implements Bottom.Host {
                 }
                 int f = game.fade; // menu-hook fade: 16 steps to black like BeginNormalPaletteFade
                 if (f > 0) { fadePaint.setColor((f * 255 / 16) << 24); c.drawRect(dst, fadePaint); }
+                if (game.classic != classicShown) applyClassic(game.classic);
+                if (game.classic && game.resetPrompt && bottomView != null) { // the pause menu, d-pad driven, over the game
+                    Bitmap m = bottomView.pauseMenuForTop();
+                    float ms = Math.min(getWidth() / (float) Bottom.W, getHeight() / (float) Bottom.H);
+                    int mw = Math.round(Bottom.W * ms), mh = Math.round(Bottom.H * ms), mx = (getWidth() - mw) / 2, my = (getHeight() - mh) / 2;
+                    menuDst.set(mx, my, mx + mw, my + mh);
+                    c.drawBitmap(m, null, menuDst, p);
+                }
             }
         };
         top.setBackgroundColor(0xFF000000);
@@ -790,7 +800,8 @@ public final class MainActivity extends Activity implements Bottom.Host {
             if (dumpTag != null) { dumpRam(dumpTag); dumpTag = null; }
             if (game.battleStarting || game.battle != null) game.topLuma = luma(pixels);
             pixels.rewind();
-            if (!game.freezeTop) synchronized (screen) { screen.copyPixelsFromBuffer(pixels); }
+            if (game.skipTopFrame || game.skipTopFrames > 0) { game.skipTopFrame = false; if (game.skipTopFrames > 0) game.skipTopFrames--; } // a frame we don't show: keep the previous one
+            else if (!game.freezeTop) synchronized (screen) { screen.copyPixelsFromBuffer(pixels); }
             pixels.rewind();
             top.postInvalidate();
             audio.write(samples, 0, n * 2); // blocking write paces emulation to real time
@@ -837,7 +848,16 @@ public final class MainActivity extends Activity implements Bottom.Host {
 
     @Override protected void onStart() {
         super.onStart();
-        if (bottomPresentation != null && !bottomPresentation.isShowing()) bottomPresentation.show();
+        if (bottomPresentation != null && !bottomPresentation.isShowing() && !(game != null && game.classic)) bottomPresentation.show();
+    }
+    private boolean classicShown;
+    /** Classic mode on: release the second screen (dismiss our window there); off: take it back. Remembered. */
+    private void applyClassic(boolean on) {
+        classicShown = on;
+        getPreferences(MODE_PRIVATE).edit().putBoolean("classic", on).apply();
+        if (bottomPresentation == null) return;
+        if (on) { if (bottomPresentation.isShowing()) bottomPresentation.dismiss(); }
+        else if (!bottomPresentation.isShowing()) bottomPresentation.show();
     }
 
     @Override protected void onDestroy() {

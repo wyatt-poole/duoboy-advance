@@ -24,6 +24,7 @@ Rough order, not promises. Ideas and help are welcome; see [CONTRIBUTING.md](CON
 - **Hotkeys**: remappable buttons and shortcuts (fast forward, save / load state, screenshot, menu)
 - **Audio**: per-channel volume, low-pass filter
 - **Rewind** and turbo settings
+- **Fast forward with music at normal speed** (as in PokeDaisy), for R2 and the menu toggle; needs a hook into the game's sound driver, so it comes after the other emulator features
 
 ## Known gaps
 See the "Not tested yet" section of [RELEASE_NOTES.md](RELEASE_NOTES.md).

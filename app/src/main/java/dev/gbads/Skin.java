@@ -100,7 +100,8 @@ final class Skin {
         int[] heldPal = r.palette(r.u32(0x0845A434));
         for (int f = 0; f < 2; f++) {
             int[] px = new int[64];
-            Rom.tile(r.d, (r.u32(0x0845A42C) & 0x1FFFFFF) / 32 + f, heldPal, px, 8, 0, 0, false, false);
+            int hiAt = (r.u32(0x0845A42C) & 0x1FFFFFF) + f * 32; // not tile-aligned: copy the exact 32 bytes
+            Rom.tile(java.util.Arrays.copyOfRange(r.d, hiAt, hiAt + 32), 0, heldPal, px, 8, 0, 0, false, false);
             heldItem[f] = Bitmap.createBitmap(px, 8, 8, Bitmap.Config.ARGB_8888);
         }
 

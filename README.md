@@ -4,7 +4,7 @@
 
 A dual-screen Game Boy Advance experience for Android handhelds like the **AYN Thor**. The game runs on the top screen; the bottom screen becomes a touch companion styled after the game itself, inspired by the 3DS Pokémon games.
 
-**Version 0.2.3.** Supports **Pokémon Unbound 2.1.1.1** only. More games are planned.
+**Version 0.2.4.** Supports **Pokémon Unbound 2.1.1.1** only. More games are planned.
 
 > DuoBoy Advance does not include any game. You need your own legally obtained ROM.
 
@@ -30,7 +30,7 @@ A dual-screen Game Boy Advance experience for Android handhelds like the **AYN T
 - Yes/No prompts (nickname, learn move, switch) as buttons
 
 **In the overworld (bottom screen)**
-- Your party, laid out like the game's party menu: tap for Summary / Shift / Item, or drag one card onto another to reorder
+- Your party, laid out like the game's party menu: tap for Summary / Switch / Item, or drag one card onto another to reorder
 - Region map with your position (needs the Town Map)
 - Menu buttons that open the game's own menus
 - Tap anywhere to continue dialogue that's waiting for A
@@ -39,6 +39,7 @@ A dual-screen Game Boy Advance experience for Android handhelds like the **AYN T
 - Built on the mGBA emulator core
 - Saves stay compatible: `.sav` (mGBA) or `.srm` (RetroArch), in a folder you choose, with import and export
 - Save states (hold Start + Select), fast forward (R2)
+- Classic mode: single-screen, exactly like a GBA, and the second screen is free for other apps
 - RetroAchievements (softcore)
 - ROM hack patcher: IPS, UPS and BPS, from a `.gba` or `.zip` base ROM
 - Home-screen shortcuts, and launching from frontends such as ES-DE or Daijisho
@@ -54,7 +55,7 @@ Everything on the bottom screen is drawn from the game's own graphics and palett
 
 ## Install
 
-1. Download `DuoBoyAdvance-0.2.3.apk` from [Releases](../../releases) and install it.
+1. Download `DuoBoyAdvance-0.2.4.apk` from [Releases](../../releases) and install it.
 2. Open it and allow file access (needed so your saves can live next to your ROM).
 3. Open Settings (the cog on the title screen) → ROMs → Add ROM, and pick your Unbound `.gba`.
    - Have the FireRed ROM and the Unbound patch instead? Use **Patch a ROM…**.
