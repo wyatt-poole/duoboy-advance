@@ -1,3 +1,10 @@
+# DuoBoy Advance 0.2.5
+
+- **Battle prompts show the right question.** The text buffer read for "Will you switch?", "Give a nickname?" and the learn-move prompts was a stale copy; the overlay now reads the game's displayed string (gDisplayedStringBattle) and shows the last page of a multi-page message with its line break.
+- **Yes / No answers on the first tap:** the answer is re-pressed until the prompt is gone, so a tap made while the question is still printing no longer just moves the cursor.
+- **Item sounds from the bottom bag** match the party menu: the recovery sound for a Medicine that worked, the select beep for "It won't have any effect."
+- Dev builds: KEY hook extras `classic 0|1` and `pause 1`; screenshots named by view.
+
 # DuoBoy Advance 0.2.4
 
 - **Party cards** (overworld and battle) now match the game's party menu pixel for pixel: same grid, same small font, Poké Ball and icon in the corner, Lv / HP rows where the game puts them.

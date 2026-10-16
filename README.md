@@ -4,7 +4,7 @@
 
 A dual-screen Game Boy Advance experience for Android handhelds like the **AYN Thor**. The game runs on the top screen; the bottom screen becomes a touch companion styled after the game itself, inspired by the 3DS Pokémon games.
 
-**Version 0.2.4.** Supports **Pokémon Unbound 2.1.1.1** only. More games are planned.
+**Version 0.2.5.** Supports **Pokémon Unbound 2.1.1.1** only. More games are planned.
 
 > DuoBoy Advance does not include any game. You need your own legally obtained ROM.
 
@@ -55,7 +55,7 @@ Everything on the bottom screen is drawn from the game's own graphics and palett
 
 ## Install
 
-1. Download `DuoBoyAdvance-0.2.4.apk` from [Releases](../../releases) and install it.
+1. Download `DuoBoyAdvance-0.2.5.apk` from [Releases](../../releases) and install it.
 2. Open it and allow file access (needed so your saves can live next to your ROM).
 3. Open Settings (the cog on the title screen) → ROMs → Add ROM, and pick your Unbound `.gba`.
    - Have the FireRed ROM and the Unbound patch instead? Use **Patch a ROM…**.

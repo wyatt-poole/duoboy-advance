@@ -372,7 +372,7 @@ final class Game {
             // Unbound's own prompts draw the same box at tiles 24..29 x 8..13 of BG0, so the box itself is the second signal
             if (b.inBattleScreen && battleSupported() && (op == 0x5A || op == 0x5B || op == 0x67 || op == 0xF3 || battleYesNoBoxDrawn())) {
                 b.yesNo = Core.read8(0x02023E83) & 1;
-                Core.read(0x02022E2C, questionBuf); b.yesNoText = plainText(questionBuf); // the question, for our own text box
+                Core.read(GDISPLAYED_STRING_BATTLE, questionBuf); b.yesNoText = plainText(questionBuf); // the question, for our own text box
             }
         }
         // While a prompt is up the game's text layer (BG0: text box + Yes/No box) is hidden; our overlay shows the question instead
@@ -382,7 +382,7 @@ final class Game {
         lastYesNo = b.yesNo;
         if (hideBg0 != bg0Hidden) { Core.layer(0, !hideBg0); bg0Hidden = hideBg0; }
         if (topHold > 0) { // until the battle's displayed string changes (gDisplayedStringBattle): then its message is what should show
-            Core.read(0x02022E2C, dispStr);
+            Core.read(GDISPLAYED_STRING_BATTLE, dispStr);
             if (topHold == TOP_HOLD) System.arraycopy(dispStr, 0, dispStr0, 0, dispStr.length);
             topHold = java.util.Arrays.equals(dispStr, dispStr0) ? topHold - 1 : 0;
             b.topHold = topHold > 0;
@@ -631,6 +631,9 @@ final class Game {
         }
     }
     private volatile int pendingYesNo = -1, pendingYesNoCursor = -1;
+    private int yesNoRetry;
+    /** Dev hook: open the Start + Select menu as if both were held. */
+    void debugPause() { resetPrompt = true; menuCursor = 0; confirmRow = -1; slotPicker = false; }
     // FireRed's general Yes/No menu (CreateYesNoMenu): sYesNoWindowId, gWindows[] (12 bytes each, bg 0xFF = freed), sMenu
     static final int YESNO_WINDOW_ID = 0x0203ADF3, GWINDOWS = 0x020204B4, SMENU = 0x0203ADE4, CLEAR_STD_WINDOW = 0x0810F4D9;
     /** Cursor of an open Yes/No menu outside the battle scripts (0 Yes, 1 No), else -1. */
@@ -864,7 +867,7 @@ final class Game {
     /** Use: balls / X items directly (slot -1), medicine on a party member (field index). */
     void bagUse(int item, int slot) { bagUse(item, slot, -1); }
     void bagUse(int item, int slot, int move) {
-        if (slot >= 0 && slot < state.party.length && state.party[slot].egg) { bagMessage = "It won't have any effect."; return; }
+        if (slot >= 0 && slot < state.party.length && state.party[slot].egg) { bagMessage = "It won't have any effect."; chime(); return; } // the party menu plays SE_SELECT here
         if ((item == 34 || item == 35) && move < 0) { bagMoveSlot = slot; bagMessage = PROMPT_MOVE; return; } // Ether / Max Ether
         bagMessage = null; bagUseSlot = slot; bagUseMove = Math.max(0, move); bagMoveSlot = -1; bagUseItem = item;
     }
@@ -897,6 +900,7 @@ final class Game {
     }
     private int topHold;
     private static final int TOP_HOLD = 90; // frames at most
+    static final int GDISPLAYED_STRING_BATTLE = 0x0202298C; // FR symbol; 0x02022E2C (read before 0.2.5) is a stale copy, so prompts showed the previous message
     private final byte[] questionBuf = new byte[160];
     /** BG0's tilemap in VRAM (BG0CNT screen base). */
     private int bg0Map() { return 0x06000000 + ((Core.read8(0x04000009) & 0x1F) * 0x800); }
@@ -942,7 +946,7 @@ final class Game {
         for (int i = 0; i < 160; i++) { int c = rom.u8(addr + i); if (c == 0xFF || c == 0xFC) break; b.append(c == 0xFE || c == 0xFA || c == 0xFB ? ' ' : Rom.DEC[c]); }
         return b.toString();
     }
-    static final int SE_USE_ITEM = 35;
+    static final int SE_USE_ITEM = 1; // SE_KAIFUKU, the recovery "bloop" the party menu plays for every Medicine that worked
     private volatile int bagPendingFinish;
     private int healSlot = -1, healFrom, healAt;
     /** The bag's party row HP while a heal rolls up (40 frames), else the real HP. */
@@ -963,7 +967,7 @@ final class Game {
         final int hpBefore = Core.read8(mon + 86) | Core.read8(mon + 87) << 8, statusBefore = Core.read32(mon + 80);
         callGame(EXECUTE_ITEM_EFFECT, mon, item, idx, bagUseMove, ret -> {
             android.util.Log.i("gbads", "item effect item=" + it + " slot=" + idx + " status=" + Integer.toHexString(Core.read32(mon + 80)) + " ret=" + Integer.toHexString(ret));
-            if ((ret & 0xFF) != 0) { bagMessage = "It won't have any effect."; return; }
+            if ((ret & 0xFF) != 0) { bagMessage = "It won't have any effect."; chime(); return; } // SE_SELECT, like the party menu
             removeBagItem(it);
             byte[] bpi = new byte[8];
             Core.read(0x02023BCE, bpi);
@@ -1037,7 +1041,7 @@ final class Game {
         } else { // refused: show the game's own message down here
             byte[] msg = new byte[120];
             Core.read(STRING_VAR4, msg);
-            chooseMessage = plainText(msg);
+            chooseMessage = plainText(msg).replace((char) 10, (char) 32);
         }
     }
     private static final int[] FC_ARGS = {0, 1, 1, 1, 3, 1, 1, 0, 1, 0, 0, 2, 1, 1, 0, 0, 2, 1, 1, 1, 1, 0, 0, 0, 0};
@@ -1053,7 +1057,8 @@ final class Game {
                 continue;
             }
             if (c == 0xFD) { i++; continue; }
-            if (c == 0xFE || c == 0xFA || c == 0xFB) { out.append(' '); continue; }
+            if (c == 0xFB) { out.setLength(0); continue; } // new page: the prompt waits on the last page only
+            if (c == 0xFE || c == 0xFA) { out.append((char) 10); continue; } // line break / scroll: the last two lines are what's on screen
             out.append(Rom.DEC[c]);
         }
         return out.toString().trim();
@@ -1527,7 +1532,7 @@ final class Game {
         if (pendingYesNo >= 0) { // the handler reads gBattleCommunication[CURSOR_POSITION] when A arrives
             Battle bt = battle;
             if (bt == null || bt.yesNo < 0) pendingYesNo = -1;
-            else if (battleKeyTimer == 0) { Core.write8(0x02023E83, pendingYesNo); battleKey = Core.A; battleKeyTimer = 4; pendingYesNo = -1; }
+            else if (battleKeyTimer == 0 && --yesNoRetry <= 0) { Core.write8(0x02023E83, pendingYesNo); battleKey = Core.A; battleKeyTimer = 4; yesNoRetry = 8; } // pressed again every 8 frames until the prompt is gone: the first A may only finish its text
         }
         if (infoSlot >= 0) { Core.write8(MOVE_CURSOR + activeBattler, infoSlot); extraSel = 0; moveInfoOpen = true; infoSlot = -1; chime(); }
         watchChooseSummary();

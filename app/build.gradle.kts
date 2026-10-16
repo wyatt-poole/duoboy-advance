@@ -17,8 +17,8 @@ android {
         applicationId = "dev.gbads"
         minSdk = 29
         targetSdk = 36
-        versionCode = 9
-        versionName = "0.2.4"
+        versionCode = 10
+        versionName = "0.2.5"
         ndk { abiFilters += "arm64-v8a" } // ponytail: Thor is arm64; add x86_64 if an emulator is ever needed
         externalNativeBuild { cmake { arguments += listOf("-DANDROID_STL=none") } }
     }

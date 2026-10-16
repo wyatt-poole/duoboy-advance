@@ -1500,6 +1500,7 @@ final class Bottom extends View {
                 : b.choosing ? "Choose a Pokémon." : b.bagOpen ? "Choose an item." : b.mode == Game.Battle.TARGET ? "Choose a target."
                 : b.safari ? "What will you do?" : "What will " + who.nick + " do?";
         String[] lines = prompt.split("\n");
+        if (lines.length > 2) lines = new String[]{lines[lines.length - 2], lines[lines.length - 1]}; // scrolled text: the last two lines
         for (int li = 0; li < Math.min(2, lines.length); li++)
             for (int i = 0, x = 16; i < lines[li].length(); i++) {
                 Integer g = Rom.ENC.get(lines[li].charAt(i));

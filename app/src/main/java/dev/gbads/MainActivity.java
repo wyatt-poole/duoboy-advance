@@ -194,7 +194,7 @@ public final class MainActivity extends Activity implements Bottom.Host {
         }, new android.content.IntentFilter("dev.gbads.DUMP"), RECEIVER_EXPORTED);
         // debug: `adb shell am broadcast -a dev.gbads.KEY --ei k 1 --ei f 6` holds Core key bits k for f frames (testing)
         registerReceiver(new android.content.BroadcastReceiver() {
-            @Override public void onReceive(Context c, Intent i) { debugKeys = i.getIntExtra("k", 0); debugFrames = i.getIntExtra("f", 6); if (i.hasExtra("classic")) game.setClassic(i.getIntExtra("classic", 0) != 0); }
+            @Override public void onReceive(Context c, Intent i) { debugKeys = i.getIntExtra("k", 0); debugFrames = i.getIntExtra("f", 6); if (i.hasExtra("classic")) game.setClassic(i.getIntExtra("classic", 0) != 0); if (i.hasExtra("pause")) game.debugPause(); }
         }, new android.content.IntentFilter("dev.gbads.KEY"), RECEIVER_EXPORTED);
         // debug poke: `adb shell am broadcast -a dev.gbads.POKE --ei a ADDR --ei v BYTE` (test setups only)
         registerReceiver(new android.content.BroadcastReceiver() {
