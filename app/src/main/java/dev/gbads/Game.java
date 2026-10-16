@@ -375,16 +375,12 @@ final class Game {
                 Core.read(GDISPLAYED_STRING_BATTLE, questionBuf); b.yesNoText = plainText(questionBuf); // the question, for our own text box
             }
         }
-        // While a prompt is up the game's text layer (BG0: text box + Yes/No box) is hidden; our overlay shows the question instead
-        boolean hideBg0 = b.yesNo >= 0;
-        if (hideBg0 && lastYesNo < 0) skipTopFrame = true; // its box was drawn this frame: don't show it
-        if (!hideBg0 && lastYesNo >= 0 && b.inBattleScreen) clearBattleYesNoBox(); // the game leaves the box until much later: wipe it now
+        // The game's own Yes/No box stays on top (linked mode): the bottom buttons mirror its cursor and answer it. Nothing is hidden.
         lastYesNo = b.yesNo;
-        if (hideBg0 != bg0Hidden) { Core.layer(0, !hideBg0); bg0Hidden = hideBg0; }
-        if (topHold > 0) { // until the battle's displayed string changes (gDisplayedStringBattle): then its message is what should show
+        if (topHold > 0) { // until the battle's displayed string changes (gDisplayedStringBattle) and the game's menu has scrolled off (BG0 back at 0)
             Core.read(GDISPLAYED_STRING_BATTLE, dispStr);
             if (topHold == TOP_HOLD) System.arraycopy(dispStr, 0, dispStr0, 0, dispStr.length);
-            topHold = java.util.Arrays.equals(dispStr, dispStr0) ? topHold - 1 : 0;
+            topHold = java.util.Arrays.equals(dispStr, dispStr0) || b.menuOnTop ? topHold - 1 : 0;
             b.topHold = topHold > 0;
         }
         battle = b;
@@ -643,26 +639,19 @@ final class Game {
     private volatile boolean owYesNoCleared;
     private boolean owPrinting;
     private volatile int owYesNoAnswer = -1;
-    void answerOwYesNo(int choice) { owYesNoAnswer = choice; }
+    private boolean owDbgOpen;
+    void answerOwYesNo(int choice) { owYesNoAnswer = choice; android.util.Log.i("gbads", "ow yes/no tap " + choice); }
     private void pollOwYesNo() {
-        if (safeMode) { owYesNo = -1; return; }
+        if (safeMode || !inOverworld()) { owYesNo = -1; return; }
         int id = Core.read8(YESNO_WINDOW_ID);
         int w = GWINDOWS + id * 12; // {bg, left, top, width, height, palette, baseBlock u16, tileData*}
         boolean open = id < 32 && Core.read8(w) != 0xFF && Core.read8(w + 3) == 6 && Core.read8(w + 4) == 4 // the Yes/No box template (6x4 tiles)
                 && Core.read8(SMENU + 5) == id && Core.read8(SMENU + 3) == 0 && Core.read8(SMENU + 4) == 1; // and sMenu is a 2-option menu on it
         int key = open ? id << 16 | Core.read8(w + 6) | Core.read8(w + 7) << 8 : -1; // a new box (id or tile block) gets cleared again
+        if (BuildConfig.DEBUG_TOOLS && open != owDbgOpen) { owDbgOpen = open; android.util.Log.i("gbads", "ow yes/no open=" + open + " id=" + id + " bg=" + Core.read8(w) + " w=" + Core.read8(w + 3) + " h=" + Core.read8(w + 4) + " menuWin=" + Core.read8(SMENU + 5) + " min=" + Core.read8(SMENU + 3) + " max=" + Core.read8(SMENU + 4) + " field=" + inOverworld() + " frame=" + frame); }
         if (key != owYesNoKey) { owYesNoKey = key; owYesNoHidden = false; owYesNoAnswer = -1; owYesNoCleared = false; owYesNoSkips = 0; }
         if (!open) { owYesNo = -1; return; }
-        boolean printing = false; // the Yes / No text printer re-copies the window while it runs
-        for (int i = 0; i < 32; i++) if (printers[i * 0x24 + 0x1B] != 0 && (printers[i * 0x24 + 4] & 0xFF) == id) printing = true;
-        if (owPrinting && !printing) owYesNoCleared = false; // printer just finished: clear once more
-        owPrinting = printing;
-        if ((!owYesNoCleared || printing) && owYesNoSkips < 40) { skipTopFrame = true; owYesNoSkips++; } // hold the top until the box is really gone
-        if ((!owYesNoHidden || frame % 8 == 0) && pendingCall == null && callDone == null) { // its box isn't needed up top; re-clear: the text printer re-copies the window
-            owYesNoHidden = true;
-            android.util.Log.i("gbads", "yes/no window " + id + " bg " + Core.read8(GWINDOWS + id * 12) + " cursor " + Core.read8(MENU_CURSOR) + " target " + target + " session " + touchSession);
-            callGame(CLEAR_STD_WINDOW, id, 1, 0, 0, r -> owYesNoCleared = true); // ClearStdWindowAndFrameToTransparent(windowId, copyToVram)
-        }
+        // linked mode: the game's box stays on top; the bottom buttons follow its cursor and answer it
         int a = owYesNoAnswer;
         if (a >= 0) { owYesNoAnswer = -1; Core.write8(MENU_CURSOR, a); tapA(); android.util.Log.i("gbads", "yes/no answered " + a); }
         owYesNo = Core.read8(MENU_CURSOR) & 1;
@@ -906,7 +895,6 @@ final class Game {
     private int bg0Map() { return 0x06000000 + ((Core.read8(0x04000009) & 0x1F) * 0x800); }
     private int bg0Tile(int x, int y) { int a = bg0Map() + (y * 32 + x) * 2; return Core.read8(a) | Core.read8(a + 1) << 8; }
     private boolean battleYesNoBoxDrawn() { return bg0Tile(24, 8) != 0 && bg0Tile(29, 13) != 0 && bg0Tile(26, 10) != 0; }
-    private void clearBattleYesNoBox() { int m = bg0Map(); for (int y = 8; y <= 13; y++) for (int x = 24; x <= 29; x += 2) Core.write32(m + (y * 32 + x) * 2, 0); }
     /** Frames the top screen keeps its last image (a game screen we don't show flashed in between). */
     volatile int skipTopFrames;
     private boolean bg0Hidden;

@@ -1491,7 +1491,7 @@ final class Bottom extends View {
     private int promptBattler;
     Bitmap battleTopOverlay() {
         Game.Battle b = game.battle;
-        if (b == null || b.passive || !b.topHold && b.yesNo < 0 && (!b.inBattleScreen || (b.mode == Game.Battle.WAIT && !b.menuOnTop && !b.choosing && !b.bagOpen))) return null;
+        if (b == null || b.passive || b.yesNo >= 0 || !b.topHold && (!b.inBattleScreen || (b.mode == Game.Battle.WAIT && !b.menuOnTop && !b.choosing && !b.bagOpen))) return null; // a Yes/No: the game's own box and question stay on top
         topBox.eraseColor(0);
         topBoxCanvas.drawBitmap(skin.battleTextbox, 0, 0, null);
         if (b.mode != Game.Battle.WAIT) promptBattler = b.battler; // between screens the game briefly reports nobody choosing
@@ -1864,7 +1864,10 @@ final class Bottom extends View {
             if (swallowTouch) { pressed = -1; dragFrom = -1; dragging = false; return true; }
         }
         if (game.classic && !game.resetPrompt) return true; // nothing to touch in classic mode
-        if (e.getActionMasked() == MotionEvent.ACTION_DOWN && game.awaitingA && !game.resetPrompt && !game.classic && (battle0() != null || game.inGame)) {
+        Game.Battle bYN = battle0();
+        boolean yesNoUp = game.owYesNo >= 0 || bYN != null && bYN.yesNo >= 0; // a Yes/No: its buttons answer, a tap elsewhere is nothing (not A)
+        if (e.getActionMasked() == MotionEvent.ACTION_DOWN && BuildConfig.DEBUG_TOOLS) android.util.Log.i("gbads", "touch down " + x + "," + y + " owYesNo " + game.owYesNo + " awaitingA " + game.awaitingA + " swallow " + swallowTouch);
+        if (e.getActionMasked() == MotionEvent.ACTION_DOWN && game.awaitingA && !yesNoUp && !game.resetPrompt && !game.classic && (battle0() != null || game.inGame)) {
             game.tapA(); swallowTouch = true; pressed = -1; return true; // dialogue waiting: a tap anywhere is A
         }
         if (swallowTouch) { if (e.getActionMasked() == MotionEvent.ACTION_UP || e.getActionMasked() == MotionEvent.ACTION_CANCEL) swallowTouch = false; return true; }

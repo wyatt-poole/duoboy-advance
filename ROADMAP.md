@@ -7,6 +7,7 @@ Rough order, not promises. Ideas and help are welcome; see [CONTRIBUTING.md](CON
 - **App icon**
 - **Touch keyboard** on the bottom screen for naming (3DS style)
 - **Area / DexNav view**: the wild Pokémon of your current area, by method and time of day, with a Pokédex entry. An experimental version is in the code (debug builds); it should follow the game's own DexNav: available once unlocked in-game, with features unlocking as the game unlocks them.
+- **Hide the game's Yes/No boxes on the top screen** properly. Since 0.2.6 the boxes stay on top and the bottom buttons only mirror and answer them (linked mode): hiding them needs a cleaner way to spot a prompt than window ids and tile checks, which gave false positives and flashes.
 - **Battle intro** animation on the bottom screen during the transition
 - **Pause menu** on the bottom screen with d-pad and touch
 

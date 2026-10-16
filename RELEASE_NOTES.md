@@ -1,3 +1,10 @@
+# DuoBoy Advance 0.2.6
+
+- **Yes/No prompts are now linked, not hidden.** The game's own box and question stay on the top screen in battle and in the overworld; the bottom buttons follow its cursor and answer it. Nothing is hidden, cleared or frame-skipped on top any more, so the flashes and the stuck or false prompts that came with that are gone. (Hiding the box properly is back on the roadmap.)
+- Overworld prompts are only detected in the field, so the Options screen can no longer trigger a bottom Yes/No.
+- A tap outside the Yes/No buttons does nothing while a prompt is up (it no longer counts as A).
+- Picking a move or target keeps the top covered until the game's menu has scrolled off, checked from the game's state rather than a timer.
+
 # DuoBoy Advance 0.2.5
 
 - **Battle prompts show the right question.** The text buffer read for "Will you switch?", "Give a nickname?" and the learn-move prompts was a stale copy; the overlay now reads the game's displayed string (gDisplayedStringBattle) and shows the last page of a multi-page message with its line break.
